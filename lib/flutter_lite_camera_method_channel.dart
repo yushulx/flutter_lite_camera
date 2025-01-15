@@ -28,21 +28,10 @@ class MethodChannelFlutterLiteCamera extends FlutterLiteCameraPlatform {
     return success;
   }
 
-  /// Sets the resolution of the camera.
-  ///
-  /// Takes [width] and [height] as parameters to set the resolution.
-  /// Returns a [Future] that completes with a boolean indicating success or failure.
-  /// @override
-  Future<bool> setResolution(int width, int height) async {
-    bool success =
-        await methodChannel.invokeMethod('setResolution', [width, height]);
-    return success;
-  }
-
   /// Captures a frame from the camera.
   ///
   /// Returns a [Future] that completes with a map containing the frame RGB88 data, width, and height.
-  /// @override
+  @override
   Future<Map<String, dynamic>> captureFrame() async {
     Map<dynamic, dynamic> frame =
         await methodChannel.invokeMethod('captureFrame');

@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_lite_camera_method_channel.dart';
