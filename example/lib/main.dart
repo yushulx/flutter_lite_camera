@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_barcode_sdk/dynamsoft_barcode.dart';
+import 'package:flutter_barcode_sdk/flutter_barcode_sdk.dart';
 import 'package:flutter_lite_camera/flutter_lite_camera.dart';
 import 'dart:ui' as ui;
 
@@ -33,11 +35,27 @@ class _CameraAppState extends State<CameraApp> {
   int _height = 480;
   ui.Image? _latestFrame;
   bool _shouldCapture = false;
+  FlutterBarcodeSdk? _barcodeReader;
+  // To read barcodes, get a 30-day FREEE trial license for Dynamsoft Barcode Reader https://www.dynamsoft.com/customer/license/trialLicense/?product=dcv&package=cross-platform
+  String licenseKey =
+      'DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==';
+  bool isDecoding = false;
+  List<BarcodeResult>? results;
 
   @override
   void initState() {
     super.initState();
     _handleWindowClose();
+    if (licenseKey != '') {
+      initBarcodeSDK();
+    }
+  }
+
+  Future<void> initBarcodeSDK() async {
+    _barcodeReader = FlutterBarcodeSdk();
+    await _barcodeReader!.setLicense(licenseKey);
+    await _barcodeReader!.init();
+    await _barcodeReader!.setBarcodeFormats(BarcodeFormat.ALL);
   }
 
   Future<void> _startCamera() async {
@@ -65,6 +83,21 @@ class _CameraAppState extends State<CameraApp> {
     }
   }
 
+  Future<void> _decodeFrame(Uint8List rgb, int width, int height) async {
+    if (isDecoding || _barcodeReader == null) return;
+
+    isDecoding = true;
+    results = await _barcodeReader!.decodeImageBuffer(
+      rgb,
+      width,
+      height,
+      width * 3,
+      BarcodeFormat.ALL,
+    );
+
+    isDecoding = false;
+  }
+
   Future<void> _captureFrames() async {
     if (!_isCameraOpened || !_shouldCapture) return;
 
@@ -73,6 +106,7 @@ class _CameraAppState extends State<CameraApp> {
           await _flutterLiteCameraPlugin.captureFrame();
       if (frame.containsKey('data')) {
         Uint8List rgbBuffer = frame['data'];
+        _decodeFrame(rgbBuffer, frame['width'], frame['height']);
         await _convertBufferToImage(rgbBuffer, frame['width'], frame['height']);
       }
     } catch (e) {
@@ -173,7 +207,7 @@ class _CameraAppState extends State<CameraApp> {
 
                 return Center(
                   child: CustomPaint(
-                    painter: FramePainter(_latestFrame!),
+                    painter: FramePainter(_latestFrame!, results ?? []),
                     child: SizedBox(
                       width: drawWidth,
                       height: drawHeight,
@@ -214,18 +248,76 @@ class _CameraAppState extends State<CameraApp> {
 
 class FramePainter extends CustomPainter {
   final ui.Image image;
+  final List<BarcodeResult> results;
 
-  FramePainter(this.image);
+  FramePainter(this.image, this.results);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
+
+    // Calculate the scaling factor (minimum of X and Y ratios)
+    final double scale =
+        (size.width / image.width).compareTo(size.height / image.height) < 0
+            ? size.width / image.width
+            : size.height / image.height;
+
+    // Center the image in the canvas
+    final double dx = (size.width - image.width * scale) / 2;
+    final double dy = (size.height - image.height * scale) / 2;
+
+    // Draw the image
     canvas.drawImageRect(
       image,
       Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-      Rect.fromLTWH(0, 0, size.width, size.height),
+      Rect.fromLTWH(dx, dy, image.width * scale, image.height * scale),
       paint,
     );
+
+    // Draw barcode results
+    if (results.isNotEmpty) {
+      final textPaint = Paint()
+        ..color = Colors.blue
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+
+      for (var result in results) {
+        // Scale the coordinates and offset by dx and dy
+        final path = Path()
+          ..moveTo(dx + result.x1.toDouble() * scale,
+              dy + result.y1.toDouble() * scale)
+          ..lineTo(dx + result.x2.toDouble() * scale,
+              dy + result.y2.toDouble() * scale)
+          ..lineTo(dx + result.x3.toDouble() * scale,
+              dy + result.y3.toDouble() * scale)
+          ..lineTo(dx + result.x4.toDouble() * scale,
+              dy + result.y4.toDouble() * scale)
+          ..close();
+
+        canvas.drawPath(path, textPaint);
+
+        // Scale text position
+        final double textX = dx + result.x1.toDouble() * scale;
+        final double textY = dy + result.y1.toDouble() * scale;
+
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: result.text,
+            style: const TextStyle(
+              color: Colors.red,
+              fontSize: 16,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        );
+
+        textPainter.layout();
+        textPainter.paint(
+          canvas,
+          Offset(textX, textY),
+        );
+      }
+    }
   }
 
   @override

@@ -70,6 +70,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_barcode_sdk:
+    dependency: "direct main"
+    description:
+      name: flutter_barcode_sdk
+      sha256: befdee98a3d5b2b88e51db5dfbab80e92bf90c5287f3b1b1129dcfc4d7750bda
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.8"
   flutter_driver:
     dependency: transitive
     description: flutter
@@ -95,6 +103,11 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_web_plugins:
+    dependency: transitive
+    description: flutter
+    source: sdk
+    version: "0.0.0"
   fuchsia_remote_debug_protocol:
     dependency: transitive
     description: flutter
@@ -105,6 +118,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  js:
+    dependency: transitive
+    description:
+      name: js
+      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.7"
   leak_tracker:
     dependency: transitive
     description:
