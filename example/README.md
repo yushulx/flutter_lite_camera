@@ -4,13 +4,16 @@ Demonstrates how to use the flutter_lite_camera plugin.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+```bash
+flutter run -d windows # linux or macos
+```
 
-A few resources to get you started if this is your first Flutter project:
+If you want to do barcode scanning:
+1. Obtain a trial license from [Dynamsoft](https://www.dynamsoft.com/customer/license/trialLicense/?product=dcv&package=cross-platform).
+2. Set the license key in 'example/lib/main.dart':
+    
+    ```dart
+    String licenseKey = 'LICENSE-KEY';
+    ```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+    https://github.com/user-attachments/assets/abc5ff09-c4c2-455f-b3c9-e0e223c03d57
