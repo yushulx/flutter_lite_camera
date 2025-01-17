@@ -92,7 +92,7 @@ class _CameraAppState extends State<CameraApp> {
       width,
       height,
       width * 3,
-      BarcodeFormat.ALL,
+      ImagePixelFormat.IPF_RGB_888.index,
     );
 
     isDecoding = false;
