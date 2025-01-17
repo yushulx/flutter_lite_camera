@@ -74,10 +74,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_barcode_sdk
-      sha256: befdee98a3d5b2b88e51db5dfbab80e92bf90c5287f3b1b1129dcfc4d7750bda
+      sha256: "1ff15fc1b27ca1094aba08826d62e9396ff338a89b4056e1b96799995d4df90c"
       url: "https://pub.dev"
     source: hosted
-    version: "2.2.8"
+    version: "2.3.0"
   flutter_driver:
     dependency: transitive
     description: flutter
