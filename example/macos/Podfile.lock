@@ -1,6 +1,6 @@
 PODS:
   - DCV (1.0.0)
-  - flutter_barcode_sdk (2.3.0):
+  - flutter_barcode_sdk (3.0.0):
     - DCV
     - FlutterMacOS
   - flutter_lite_camera (0.0.1):
@@ -26,10 +26,10 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   DCV: a0ff457169fe0e30a36bec2f359ccd3a18480be1
-  flutter_barcode_sdk: 9ecb4b8294db80d0b8362ec76cba038bb206d665
-  flutter_lite_camera: 9370352a7cae3a2c9cfd961653759ec41e6e622b
+  flutter_barcode_sdk: c6339a9fa2e0b3696655671af342299de3ac4382
+  flutter_lite_camera: 0a91cbcebca420a0e62955fbcdd7d030cc5da322
   FlutterMacOS: 8f6f14fa908a6fb3fba0cd85dbd81ec4b251fb24
 
 PODFILE CHECKSUM: 236401fc2c932af29a9fcf0e97baeeb2d750d367
 
-COCOAPODS: 1.15.2
+COCOAPODS: 1.16.2

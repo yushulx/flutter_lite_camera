@@ -54,7 +54,6 @@ class _CameraAppState extends State<CameraApp> {
     _barcodeReader = FlutterBarcodeSdk();
     await _barcodeReader!.setLicense(licenseKey);
     await _barcodeReader!.init();
-    await _barcodeReader!.setBarcodeFormats(BarcodeFormat.ALL);
   }
 
   Future<void> _startCamera() async {
