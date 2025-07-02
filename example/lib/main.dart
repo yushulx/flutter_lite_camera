@@ -37,7 +37,8 @@ class _CameraAppState extends State<CameraApp> {
   bool _shouldCapture = false;
   FlutterBarcodeSdk? _barcodeReader;
   // To read barcodes, get a 30-day FREEE trial license for Dynamsoft Barcode Reader https://www.dynamsoft.com/customer/license/trialLicense/?product=dcv&package=cross-platform
-  String licenseKey = 'LICENSE-KEY';
+  String licenseKey =
+      'DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==';
   bool isDecoding = false;
   List<BarcodeResult>? results;
 
@@ -91,6 +92,7 @@ class _CameraAppState extends State<CameraApp> {
       height,
       width * 3,
       ImagePixelFormat.IPF_RGB_888.index,
+      ImageRotation.rotation0.index,
     );
 
     isDecoding = false;

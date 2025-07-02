@@ -10,7 +10,17 @@
 #pragma comment(lib, "mfreadwrite.lib")
 #pragma comment(lib, "mfuuid.lib")
 
-using Microsoft::WRL::ComPtr;
+inline void printf_to_cerr(const char *format, ...)
+{
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    std::cerr << buffer;
+}
+
+#define printf printf_to_cerr
 
 unsigned char clamp(double value, double min, double max)
 {
@@ -94,7 +104,6 @@ Camera::Camera() : reader(nullptr), frameWidth(640), frameHeight(480), initializ
 Camera::~Camera()
 {
     Release();
-    ShutdownMediaFoundation();
 }
 
 void Camera::InitializeMediaFoundation()
@@ -117,6 +126,12 @@ void Camera::ShutdownMediaFoundation()
 {
     if (initialized)
     {
+        if (ms)
+        {
+            ms->Shutdown();
+            ms.Reset();
+        }
+
         MFShutdown();
         initialized = false;
     }
@@ -164,6 +179,8 @@ bool Camera::Open(int cameraIndex)
     if (FAILED(hr))
         return false;
 
+    this->ms = mediaSource;
+
     ComPtr<IMFSourceReader> mfReader;
     hr = MFCreateSourceReaderFromMediaSource(mediaSource.Get(), nullptr, &mfReader);
     if (FAILED(hr))
@@ -200,6 +217,8 @@ void Camera::Release()
     {
         ComPtr<IMFSourceReader> mfReader(static_cast<IMFSourceReader *>(reader));
         reader = nullptr;
+
+        ShutdownMediaFoundation();
     }
 }
 
