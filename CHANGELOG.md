@@ -1,3 +1,6 @@
+## 0.0.2
+- Fixed camera release issue for Windows.
+
 ## 0.0.1
 
 - Initial release of the Flutter Lite Camera plugin.

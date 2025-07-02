@@ -1,6 +1,6 @@
 name: flutter_lite_camera
 description: "A lightweight Flutter plugin designed for capturing camera frames with a fixed resolution of 640x480 in RGB888 format. The plugin supports Windows, Linux, and macOS platforms, making it ideal for building camera preview applications and performing image processing tasks."
-version: 0.0.1
+version: 0.0.2
 homepage: https://github.com/yushulx/flutter_lite_camera
 repository: https://github.com/yushulx/flutter_lite_camera
 
