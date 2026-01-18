@@ -119,6 +119,18 @@ bool Camera::SetResolution(int width, int height)
 
 FrameData Camera::CaptureFrame()
 {
+    if (fd == -1)
+    {
+        std::cerr << "Device not opened." << std::endl;
+        return {};
+    }
+
+    if (buffers == nullptr)
+    {
+        std::cerr << "Error: buffers array is not initialized." << std::endl;
+        return {};
+    }
+
     struct v4l2_buffer buf;
     memset(&buf, 0, sizeof(buf));
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -131,9 +143,30 @@ FrameData Camera::CaptureFrame()
         return {};
     }
 
-    // FILE *file = fopen("raw_frame.yuyv", "wb");
-    // fwrite(buffers[buf.index].start, 1, buffers[buf.index].length, file);
-    // fclose(file);
+    if (buf.index >= bufferCount)
+    {
+        std::cerr << "Error: Buffer index " << buf.index << " exceeds buffer count " << bufferCount << std::endl;
+        return {};
+    }
+
+    if (buffers[buf.index].start == nullptr)
+    {
+        std::cerr << "Error: Buffer start is null for index " << buf.index << std::endl;
+        return {};
+    }
+
+    size_t expectedSize = frameWidth * frameHeight * 2;
+    if (buffers[buf.index].length < expectedSize)
+    {
+        std::cerr << "Error: Buffer length " << buffers[buf.index].length << " is smaller than expected " << expectedSize << std::endl;
+        return {};
+    }
+
+    if ((frameWidth * frameHeight) % 2 != 0)
+    {
+        std::cerr << "Error: Total pixels must be even for YUYV conversion." << std::endl;
+        return {};
+    }
 
     // Prepare FrameData structure
     FrameData frame;
