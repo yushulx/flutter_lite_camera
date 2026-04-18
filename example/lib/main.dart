@@ -46,7 +46,7 @@ class _CameraAppState extends State<CameraApp> {
 
   String get _currentName {
     if (_currentCamera < devices.length && _currentCamera > -1) {
-      return devices[_currentCamera] ?? '';
+      return devices[_currentCamera];
     }
     return '';
   }
