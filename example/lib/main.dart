@@ -271,7 +271,7 @@ class _CameraAppState extends State<CameraApp> {
                   onPressed: _isCapturing ? null : () => _startCamera(),
                   child: const Text('Start'),
                 ),
-                // Start Button
+                // Switch Camera Button
                 ElevatedButton(
                   onPressed: devices.isEmpty ? null : () => _nextCamera(),
                   child: Text('Switch Camera ($_currentName)'),
