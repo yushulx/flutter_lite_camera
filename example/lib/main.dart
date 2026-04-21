@@ -33,6 +33,7 @@ class _CameraAppState extends State<CameraApp> {
   bool _isCapturing = false;
   int _width = 640;
   int _height = 480;
+  int _currentCamera = 0;
   ui.Image? _latestFrame;
   bool _shouldCapture = false;
   FlutterBarcodeSdk? _barcodeReader;
@@ -41,6 +42,14 @@ class _CameraAppState extends State<CameraApp> {
       'DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==';
   bool isDecoding = false;
   List<BarcodeResult>? results;
+  List<String> devices = [];
+
+  String get _currentName {
+    if (_currentCamera < devices.length && _currentCamera > -1) {
+      return devices[_currentCamera];
+    }
+    return '';
+  }
 
   @override
   void initState() {
@@ -57,14 +66,40 @@ class _CameraAppState extends State<CameraApp> {
     await _barcodeReader!.init();
   }
 
+  Future<void> _nextCamera() async {
+    await _stopCamera();
+    _currentCamera++;
+    await _startCamera();
+  }
+
+  Future<int?> _openCamera(int startFrom) async {
+    if (devices.isEmpty) {
+      return null;
+    }
+    int current = startFrom % devices.length;
+    while (true) {
+      print("Opening camera $current (${devices[current]??'null'})})");
+      bool opened = await _flutterLiteCameraPlugin.open(current);
+      if (opened) {
+        print("Camera $current is now open");
+        return current;
+      }
+
+      current = (current + 1) % devices.length;
+      if (current == startFrom) {
+        return null;
+      }
+    }
+  }
+
   Future<void> _startCamera() async {
     try {
-      List<String> devices = await _flutterLiteCameraPlugin.getDeviceList();
+      devices = await _flutterLiteCameraPlugin.getDeviceList();
       if (devices.isNotEmpty) {
         print("Available Devices: $devices");
-        print("Opening camera 0");
-        bool opened = await _flutterLiteCameraPlugin.open(0);
-        if (opened) {
+        int? opened = await _openCamera(_currentCamera);
+        if (opened != null) {
+          _currentCamera = opened;
           setState(() {
             _isCameraOpened = true;
             _shouldCapture = true;
@@ -110,7 +145,11 @@ class _CameraAppState extends State<CameraApp> {
         await _convertBufferToImage(rgbBuffer, frame['width'], frame['height']);
       }
     } catch (e) {
-      // print("Error capturing frame: $e");
+      print("Error capturing frame: $e");
+      _shouldCapture = false;
+      setState(() {
+        _isCapturing = false;
+      });
     }
 
     // Schedule the next frame
@@ -231,6 +270,11 @@ class _CameraAppState extends State<CameraApp> {
                 ElevatedButton(
                   onPressed: _isCapturing ? null : () => _startCamera(),
                   child: const Text('Start'),
+                ),
+                // Switch Camera Button
+                ElevatedButton(
+                  onPressed: devices.isEmpty ? null : () => _nextCamera(),
+                  child: Text('Switch Camera ($_currentName)'),
                 ),
                 // Stop Button
                 ElevatedButton(
