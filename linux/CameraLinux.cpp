@@ -162,9 +162,9 @@ FrameData Camera::CaptureFrame()
         return {};
     }
 
-    if ((frameWidth * frameHeight) % 2 != 0)
+    if (frameWidth % 2 != 0)
     {
-        std::cerr << "Error: Total pixels must be even for YUYV conversion." << std::endl;
+        std::cerr << "Error: Frame width must be even for YUYV conversion." << std::endl;
         return {};
     }
 
