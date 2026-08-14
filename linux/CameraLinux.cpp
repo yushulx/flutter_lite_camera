@@ -92,6 +92,11 @@ bool Camera::Open(int cameraIndex)
         return false;
     }
 
+    // The driver may negotiate a different resolution than requested; keep
+    // the members in sync with what was actually granted.
+    frameWidth = fmt.fmt.pix.width;
+    frameHeight = fmt.fmt.pix.height;
+
     if (!InitDevice() || !StartCapture())
     {
         Release();

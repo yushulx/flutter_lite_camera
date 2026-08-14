@@ -1,6 +1,6 @@
 # Flutter Lite Camera
 
-`Flutter Lite Camera` is a lightweight Flutter plugin designed for capturing camera frames with a fixed resolution of **640x480** in **RGB888** format. The plugin supports **Windows**, **Linux**, and **macOS** platforms, making it ideal for building camera preview applications and performing image processing tasks.
+`Flutter Lite Camera` is a lightweight Flutter plugin designed for capturing camera frames in **RGB888** format. The plugin supports **Windows**, **Linux**, and **macOS** platforms, making it ideal for building camera preview applications and performing image processing tasks. The default target resolution is **640x480**; each platform negotiates with the device and every frame reports its actual width and height.
 
 ![Flutter camera preview app](https://www.dynamsoft.com/codepool/img/2025/01/flutter-lite-camera.png)
 

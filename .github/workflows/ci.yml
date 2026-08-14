@@ -100,8 +100,26 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter pub get
+      - name: Probe direct app launch
+        # The app bundles third-party dylibs via flutter_barcode_sdk_macos;
+        # launch it directly to surface dyld/load errors that the test
+        # harness only reports as "Unable to start the app".
         working-directory: example
+        run: |
+          flutter build macos --debug
+          BIN="build/macos/Build/Products/Debug/flutter_lite_camera_example.app/Contents/MacOS/flutter_lite_camera_example"
+          "$BIN" > /tmp/app_out.log 2>&1 &
+          PID=$!
+          sleep 8
+          if kill -0 $PID 2>/dev/null; then
+            echo "APP_LAUNCH_OK"
+            kill $PID || true
+          else
+            echo "APP_LAUNCH_FAILED"
+            wait $PID || echo "exit code: $?"
+          fi
+          echo "=== app output ==="
+          cat /tmp/app_out.log
       # Launching a desktop app on the macOS runner occasionally fails with
       # "Unable to start the app on the device"; retry a few times.
       - name: Run integration tests
@@ -118,9 +136,12 @@ jobs:
   # /dev/video0 and ffmpeg feeds a test pattern into it, so the camera
   # pipeline (open -> startPreview -> captureFrame -> stopPreview) runs for
   # real, including the capture thread, texture registration and frame cache.
+  #
+  # The stock azure kernel ships no V4L2 core modules, so the job first
+  # installs the generic Ubuntu kernel and reboots the runner into it.
   runtime-test-linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -131,10 +152,27 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
-            xvfb ffmpeg v4l-utils "linux-headers-$(uname -r)"
+            xvfb ffmpeg v4l-utils build-essential git
+      - name: Install the generic kernel and reboot
+        # The azure kernel lacks the V4L2 core (videodev/videobuf2), which
+        # v4l2loopback depends on. The generic kernel includes them. The
+        # runner resumes this job automatically after the reboot.
+        run: |
+          sudo apt-get install -y linux-image-generic linux-headers-generic linux-modules-extra-generic
+          NEW_KERNEL=$(ls /boot/vmlinuz-*-generic | sort -V | tail -n1 | sed 's|/boot/vmlinuz-||')
+          echo "Rebooting into kernel: $NEW_KERNEL"
+          sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub
+          sudo update-grub
+          sudo grub-set-default "Advanced options for Ubuntu>Ubuntu, with Linux $NEW_KERNEL"
+          sudo reboot
+      - name: Verify the generic kernel is running
+        run: |
+          uname -r
+          if [[ "$(uname -r)" == *azure* ]]; then
+            echo "Still on the azure kernel; reboot did not switch kernels"
+            exit 1
+          fi
       - name: Build and install v4l2loopback
-        # The distro v4l2loopback-dkms package may not support the runner's
-        # kernel; building from source tracks the latest kernel API.
         run: |
           git clone --depth 1 https://github.com/umlaeute/v4l2loopback.git /tmp/v4l2loopback
           make -C /tmp/v4l2loopback
@@ -142,10 +180,6 @@ jobs:
           sudo depmod -a
       - name: Start a virtual camera
         run: |
-          sudo modprobe videodev
-          sudo modprobe videobuf2_common || true
-          sudo modprobe videobuf2_v4l2 || true
-          sudo modprobe videobuf2_vmalloc || true
           if ! sudo modprobe v4l2loopback video_nr=0 card_label="CI Camera" exclusive_caps=1; then
             echo "=== dmesg tail ==="
             sudo dmesg | tail -30
