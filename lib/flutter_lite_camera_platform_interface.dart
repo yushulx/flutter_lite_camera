@@ -34,8 +34,25 @@ abstract class FlutterLiteCameraPlatform extends PlatformInterface {
   }
 
   /// Captures a single RGB frame from the camera.
+  ///
+  /// While a preview is running (see [startPreview]) this returns the latest
+  /// frame from the native frame cache without disturbing the video stream.
   Future<Map<String, dynamic>> captureFrame() {
     throw UnimplementedError('captureFrame() has not been implemented.');
+  }
+
+  /// Starts the native preview stream and returns a texture id.
+  ///
+  /// The camera must be opened with [open] first. Pass the returned id to a
+  /// [Texture] widget to display the video feed. Frames are drawn entirely at
+  /// the native layer; no pixel data crosses the platform channel.
+  Future<int> startPreview() {
+    throw UnimplementedError('startPreview() has not been implemented.');
+  }
+
+  /// Stops the preview stream and unregisters the texture.
+  Future<void> stopPreview() {
+    throw UnimplementedError('stopPreview() has not been implemented.');
   }
 
   /// Releases the camera and associated resources.

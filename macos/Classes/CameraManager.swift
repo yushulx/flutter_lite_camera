@@ -1,5 +1,4 @@
 import AVFoundation
-import Accelerate
 import FlutterMacOS
 import Foundation
 
@@ -10,16 +9,23 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var frameWidth: Int = 640
     private var frameHeight: Int = 480
 
-    private let frameQueue = DispatchQueue(
-        label: "com.flutter_lite_camera.frameQueue", attributes: .concurrent)
-    private var _currentFrame: FrameData?
+    /// Called on the capture queue for every incoming frame. The pixel buffer
+    /// is BGRA and can be handed to a FlutterTexture directly.
+    var onFrame: ((CVPixelBuffer) -> Void)?
 
-    var currentFrame: FrameData? {
+    private let bufferLock = NSLock()
+    private var _latestPixelBuffer: CVPixelBuffer?
+
+    private var latestPixelBuffer: CVPixelBuffer? {
         get {
-            return frameQueue.sync { _currentFrame }
+            bufferLock.lock()
+            defer { bufferLock.unlock() }
+            return _latestPixelBuffer
         }
         set {
-            frameQueue.async(flags: .barrier) { self._currentFrame = newValue }
+            bufferLock.lock()
+            _latestPixelBuffer = newValue
+            bufferLock.unlock()
         }
     }
 
@@ -60,17 +66,20 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                 return false
             }
 
-            // Find the format with 640x480 resolution
-            if let format = self.captureDevice?.formats.first(where: {
-                let dimensions = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
-                return dimensions.width == 1280 && dimensions.height == 720
+            // Pick the format closest to the requested resolution
+            if let format = self.captureDevice?.formats.min(by: {
+                let d0 = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
+                let d1 = CMVideoFormatDescriptionGetDimensions($1.formatDescription)
+                return abs(Int(d0.width) - self.frameWidth) + abs(Int(d0.height) - self.frameHeight)
+                    < abs(Int(d1.width) - self.frameWidth) + abs(Int(d1.height) - self.frameHeight)
             }) {
                 try self.captureDevice?.lockForConfiguration()
                 self.captureDevice?.activeFormat = format
                 self.captureDevice?.unlockForConfiguration()
-                print("Resolution set to 640x480")
+                let d = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                print("Resolution set to \(d.width)x\(d.height)")
             } else {
-                print("640x480 resolution not supported")
+                print("\(self.frameWidth)x\(self.frameHeight) resolution not supported")
             }
 
             self.videoOutput = AVCaptureVideoDataOutput()
@@ -113,6 +122,8 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             }) {
                 device.activeFormat = format
                 device.unlockForConfiguration()
+                self.frameWidth = width
+                self.frameHeight = height
                 return true
             } else {
                 print("Resolution not supported.")
@@ -125,26 +136,66 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         }
     }
 
+    /// Converts the latest BGRA frame to RGB888 on demand. This runs only when
+    /// a frame is explicitly requested (e.g. for barcode decoding) and never
+    /// touches the preview path.
     func captureFrame() -> FrameData? {
-        guard let frame = currentFrame else {
+        guard let pixelBuffer = latestPixelBuffer else {
             return nil
         }
-        return frame
+
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+            return nil
+        }
+
+        var rgbData = Data(count: width * height * 3)
+        rgbData.withUnsafeMutableBytes { dstPointer in
+            let dst = dstPointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
+            let src = baseAddress.assumingMemoryBound(to: UInt8.self)
+
+            for y in 0..<height {
+                let srcRow = src + y * bytesPerRow
+                let dstRow = dst + y * width * 3
+                for x in 0..<width {
+                    // BGRA -> RGB
+                    dstRow[x * 3] = srcRow[x * 4 + 2]
+                    dstRow[x * 3 + 1] = srcRow[x * 4 + 1]
+                    dstRow[x * 3 + 2] = srcRow[x * 4]
+                }
+            }
+        }
+
+        return FrameData(width: width, height: height, rgbData: rgbData)
     }
 
     func getWidth() -> Int {
+        if let buffer = latestPixelBuffer {
+            return CVPixelBufferGetWidth(buffer)
+        }
         return self.frameWidth
     }
 
     func getHeight() -> Int {
+        if let buffer = latestPixelBuffer {
+            return CVPixelBufferGetHeight(buffer)
+        }
         return self.frameHeight
     }
 
     func release() {
+        self.onFrame = nil
         self.captureSession?.stopRunning()
         self.captureSession = nil
         self.videoOutput = nil
         self.captureDevice = nil
+        self.latestPixelBuffer = nil
     }
 
     func listSupportedMediaTypes() -> [[String: Any]] {
@@ -211,90 +262,9 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             return
         }
 
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-
-        let sourceWidth = CVPixelBufferGetWidth(pixelBuffer)
-        let sourceHeight = CVPixelBufferGetHeight(pixelBuffer)
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer)
-
-        guard let baseAddress = baseAddress else {
-            print("Failed to get base address.")
-            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-            return
-        }
-
-        let targetWidth = 640
-        let targetHeight = 480
-
-        // Calculate aspect-ratio-preserving dimensions
-        let aspectRatio = CGFloat(sourceWidth) / CGFloat(sourceHeight)
-        let scaledWidth = Int(min(CGFloat(targetWidth), CGFloat(targetHeight) * aspectRatio))
-        let scaledHeight = Int(CGFloat(scaledWidth) / aspectRatio)
-
-        // Prepare source buffer for resizing
-        var sourceBuffer = vImage_Buffer(
-            data: baseAddress,
-            height: vImagePixelCount(sourceHeight),
-            width: vImagePixelCount(sourceWidth),
-            rowBytes: bytesPerRow
-        )
-
-        // Prepare destination buffer for resized RGBA frame
-        let targetBytesPerRowRGBA = scaledWidth * 4  // RGBA
-        var resizedRGBAData = Data(count: scaledHeight * targetBytesPerRowRGBA)
-        resizedRGBAData.withUnsafeMutableBytes { resizedPointer in
-            var destinationBuffer = vImage_Buffer(
-                data: resizedPointer.baseAddress!,
-                height: vImagePixelCount(scaledHeight),
-                width: vImagePixelCount(scaledWidth),
-                rowBytes: targetBytesPerRowRGBA
-            )
-
-            // Perform resizing using vImage
-            vImageScale_ARGB8888(
-                &sourceBuffer,
-                &destinationBuffer,
-                nil,
-                vImage_Flags(kvImageNoFlags)
-            )
-        }
-
-        // Prepare the final buffer for the padded 640x480 image
-        let targetBytesPerRowRGB = targetWidth * 3  // RGB
-        var paddedRGBData = Data(count: targetHeight * targetBytesPerRowRGB)
-
-        paddedRGBData.withUnsafeMutableBytes { paddedPointer in
-            resizedRGBAData.withUnsafeBytes { rgbaPointer in
-                let rgbaBytes = rgbaPointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
-                let paddedBytes = paddedPointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
-
-                // Center the resized image in the 640x480 frame
-                let paddingX = (targetWidth - scaledWidth) / 2
-                let paddingY = (targetHeight - scaledHeight) / 2
-
-                for y in 0..<scaledHeight {
-                    for x in 0..<scaledWidth {
-                        let srcIndex = (y * targetBytesPerRowRGBA) + (x * 4)
-                        let dstIndex =
-                            ((y + paddingY) * targetBytesPerRowRGB) + ((x + paddingX) * 3)
-
-                        // Copy RGB data, ignoring the alpha channel
-                        paddedBytes[dstIndex] = rgbaBytes[srcIndex]  // R
-                        paddedBytes[dstIndex + 1] = rgbaBytes[srcIndex + 1]  // G
-                        paddedBytes[dstIndex + 2] = rgbaBytes[srcIndex + 2]  // B
-                    }
-                }
-            }
-        }
-
-        CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-
-        // Create the padded RGB frame
-        let paddedFrame = FrameData(
-            width: targetWidth, height: targetHeight, rgbData: paddedRGBData)
-        self.currentFrame = paddedFrame
-        frameWidth = targetWidth
-        frameHeight = targetHeight
+        // Retain the buffer for on-demand captureFrame() conversions, then
+        // forward it to the preview texture without any pixel processing.
+        self.latestPixelBuffer = pixelBuffer
+        self.onFrame?(pixelBuffer)
     }
 }

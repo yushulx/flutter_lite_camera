@@ -13,6 +13,17 @@ class FlutterLiteCamera {
     return FlutterLiteCameraPlatform.instance.captureFrame();
   }
 
+  /// Starts the native preview stream and returns a texture id that can be
+  /// shown with a [Texture] widget. Call [open] before this.
+  Future<int> startPreview() {
+    return FlutterLiteCameraPlatform.instance.startPreview();
+  }
+
+  /// Stops the preview stream started with [startPreview].
+  Future<void> stopPreview() {
+    return FlutterLiteCameraPlatform.instance.stopPreview();
+  }
+
   Future<void> release() {
     return FlutterLiteCameraPlatform.instance.release();
   }

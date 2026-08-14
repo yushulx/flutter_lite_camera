@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <cstring>
+#include <poll.h>
 
 unsigned char clamp(double value, double min, double max)
 {
@@ -25,14 +26,36 @@ void ConvertYUY2ToRGB(const unsigned char *yuy2Data, unsigned char *rgbData, int
         unsigned char y2 = yuy2Data[i + 2];
         unsigned char v = yuy2Data[i + 3];
 
-        rgbData[rgbIndex++] = clamp(y1 + 1.772 * (u - 128), 0.0, 255.0);
-        rgbData[rgbIndex++] = clamp(y1 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
         rgbData[rgbIndex++] = clamp(y1 + 1.402 * (v - 128), 0.0, 255.0);
+        rgbData[rgbIndex++] = clamp(y1 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
+        rgbData[rgbIndex++] = clamp(y1 + 1.772 * (u - 128), 0.0, 255.0);
 
         // Convert second pixel (Y2, U, V) to RGB
-        rgbData[rgbIndex++] = clamp(y2 + 1.772 * (u - 128), 0.0, 255.0);
-        rgbData[rgbIndex++] = clamp(y2 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
         rgbData[rgbIndex++] = clamp(y2 + 1.402 * (v - 128), 0.0, 255.0);
+        rgbData[rgbIndex++] = clamp(y2 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
+        rgbData[rgbIndex++] = clamp(y2 + 1.772 * (u - 128), 0.0, 255.0);
+    }
+}
+
+void ConvertYUY2ToRGBA(const unsigned char *yuy2Data, unsigned char *rgbaData, int width, int height)
+{
+    int rgbaIndex = 0;
+    for (int i = 0; i < width * height * 2; i += 4)
+    {
+        unsigned char y1 = yuy2Data[i];
+        unsigned char u = yuy2Data[i + 1];
+        unsigned char y2 = yuy2Data[i + 2];
+        unsigned char v = yuy2Data[i + 3];
+
+        rgbaData[rgbaIndex++] = clamp(y1 + 1.402 * (v - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = clamp(y1 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = clamp(y1 + 1.772 * (u - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = 255;
+
+        rgbaData[rgbaIndex++] = clamp(y2 + 1.402 * (v - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = clamp(y2 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = clamp(y2 + 1.772 * (u - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = 255;
     }
 }
 
@@ -80,6 +103,14 @@ bool Camera::Open(int cameraIndex)
 
 void Camera::Release()
 {
+    StopCaptureLoop();
+
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        cachedRgba.clear();
+        cachedRgba.shrink_to_fit();
+    }
+
     StopCapture();
     UninitDevice();
     if (fd >= 0)
@@ -87,6 +118,78 @@ void Camera::Release()
         close(fd);
         fd = -1;
     }
+}
+
+bool Camera::StartCaptureLoop(FrameCallback callback)
+{
+    if (fd < 0 || streaming.load())
+        return false;
+
+    frameCallback = std::move(callback);
+    streaming.store(true);
+    captureThread = std::thread(&Camera::CaptureLoop, this);
+    return true;
+}
+
+void Camera::StopCaptureLoop()
+{
+    streaming.store(false);
+    if (captureThread.joinable())
+    {
+        captureThread.join();
+    }
+    frameCallback = nullptr;
+}
+
+void Camera::CaptureLoop()
+{
+    std::vector<unsigned char> rgba(static_cast<size_t>(frameWidth) * frameHeight * 4);
+
+    while (streaming.load())
+    {
+        // Wait for a frame with a timeout so StopCaptureLoop() stays responsive.
+        struct pollfd pfd;
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+
+        int ready = poll(&pfd, 1, 200);
+        if (ready <= 0 || !(pfd.revents & POLLIN))
+            continue;
+
+        struct v4l2_buffer buf;
+        memset(&buf, 0, sizeof(buf));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+
+        if (ioctl(fd, VIDIOC_DQBUF, &buf) < 0)
+        {
+            if (streaming.load())
+            {
+                perror("Capture loop: failed to dequeue buffer");
+            }
+            break;
+        }
+
+        ConvertYUY2ToRGBA(reinterpret_cast<unsigned char *>(buffers[buf.index].start), rgba.data(), frameWidth, frameHeight);
+
+        if (ioctl(fd, VIDIOC_QBUF, &buf) < 0)
+        {
+            perror("Capture loop: failed to queue buffer");
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(cacheMutex);
+            cachedRgba = rgba;
+        }
+
+        if (frameCallback)
+        {
+            frameCallback(rgba.data(), (int)frameWidth, (int)frameHeight);
+        }
+    }
+
+    streaming.store(false);
 }
 
 bool Camera::SetResolution(int width, int height)
@@ -119,6 +222,35 @@ bool Camera::SetResolution(int width, int height)
 
 FrameData Camera::CaptureFrame()
 {
+    // While the preview stream is running, serve the latest cached frame
+    // instead of dequeuing a new buffer.
+    if (streaming.load())
+    {
+        FrameData frame;
+        frame.width = frameWidth;
+        frame.height = frameHeight;
+        frame.rgbData = nullptr;
+
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        if (cachedRgba.empty())
+        {
+            return frame;
+        }
+
+        frame.size = static_cast<size_t>(frameWidth) * frameHeight * 3;
+        frame.rgbData = new unsigned char[frame.size];
+
+        const unsigned char *src = cachedRgba.data();
+        unsigned char *dst = frame.rgbData;
+        for (size_t i = 0, j = 0; j < frame.size; i += 4, j += 3)
+        {
+            dst[j] = src[i];
+            dst[j + 1] = src[i + 1];
+            dst[j + 2] = src[i + 2];
+        }
+        return frame;
+    }
+
     struct v4l2_buffer buf;
     memset(&buf, 0, sizeof(buf));
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;

@@ -42,17 +42,6 @@ void ConvertYUY2ToRGB(const unsigned char *yuy2Data, unsigned char *rgbData, int
         unsigned char y2 = yuy2Data[i + 2];
         unsigned char v = yuy2Data[i + 3];
 
-#ifdef _WIN32
-        // Convert first pixel (Y1, U, V) to RGB
-        rgbData[rgbIndex++] = clamp(y1 + 1.772 * (u - 128), 0.0, 255.0);
-        rgbData[rgbIndex++] = clamp(y1 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
-        rgbData[rgbIndex++] = clamp(y1 + 1.402 * (v - 128), 0.0, 255.0);
-
-        // Convert second pixel (Y2, U, V) to RGB
-        rgbData[rgbIndex++] = clamp(y2 + 1.772 * (u - 128), 0.0, 255.0);
-        rgbData[rgbIndex++] = clamp(y2 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
-        rgbData[rgbIndex++] = clamp(y2 + 1.402 * (v - 128), 0.0, 255.0);
-#else
         // Convert first pixel (Y1, U, V) to RGB
         rgbData[rgbIndex++] = clamp(y1 + 1.402 * (v - 128), 0.0, 255.0);
         rgbData[rgbIndex++] = clamp(y1 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
@@ -62,7 +51,28 @@ void ConvertYUY2ToRGB(const unsigned char *yuy2Data, unsigned char *rgbData, int
         rgbData[rgbIndex++] = clamp(y2 + 1.402 * (v - 128), 0.0, 255.0);
         rgbData[rgbIndex++] = clamp(y2 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
         rgbData[rgbIndex++] = clamp(y2 + 1.772 * (u - 128), 0.0, 255.0);
-#endif
+    }
+}
+
+void ConvertYUY2ToRGBA(const unsigned char *yuy2Data, unsigned char *rgbaData, int width, int height)
+{
+    int rgbaIndex = 0;
+    for (int i = 0; i < width * height * 2; i += 4)
+    {
+        unsigned char y1 = yuy2Data[i];
+        unsigned char u = yuy2Data[i + 1];
+        unsigned char y2 = yuy2Data[i + 2];
+        unsigned char v = yuy2Data[i + 3];
+
+        rgbaData[rgbaIndex++] = clamp(y1 + 1.402 * (v - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = clamp(y1 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = clamp(y1 + 1.772 * (u - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = 255;
+
+        rgbaData[rgbaIndex++] = clamp(y2 + 1.402 * (v - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = clamp(y2 - 0.344136 * (u - 128) - 0.714136 * (v - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = clamp(y2 + 1.772 * (u - 128), 0.0, 255.0);
+        rgbaData[rgbaIndex++] = 255;
     }
 }
 
@@ -141,6 +151,10 @@ bool Camera::Open(int cameraIndex)
 {
     Release();
 
+    // Release() shuts Media Foundation down; make sure it is running again
+    // before enumerating devices.
+    InitializeMediaFoundation();
+
     // Enumerate video devices
     ComPtr<IMFAttributes> attributes;
     HRESULT hr = MFCreateAttributes(&attributes, 1);
@@ -213,6 +227,14 @@ bool Camera::Open(int cameraIndex)
 
 void Camera::Release()
 {
+    StopCaptureLoop();
+
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        cachedRgba.clear();
+        cachedRgba.shrink_to_fit();
+    }
+
     if (reader)
     {
         ComPtr<IMFSourceReader> mfReader(static_cast<IMFSourceReader *>(reader));
@@ -220,6 +242,82 @@ void Camera::Release()
 
         ShutdownMediaFoundation();
     }
+}
+
+bool Camera::StartCaptureLoop(FrameCallback callback)
+{
+    if (!reader || streaming.load())
+        return false;
+
+    frameCallback = std::move(callback);
+    streaming.store(true);
+    captureThread = std::thread(&Camera::CaptureLoop, this);
+    return true;
+}
+
+void Camera::StopCaptureLoop()
+{
+    streaming.store(false);
+    if (captureThread.joinable())
+    {
+        captureThread.join();
+    }
+    frameCallback = nullptr;
+}
+
+void Camera::CaptureLoop()
+{
+    IMFSourceReader *mfReader = reinterpret_cast<IMFSourceReader *>(reader);
+    std::vector<unsigned char> rgba(static_cast<size_t>(frameWidth) * frameHeight * 4);
+
+    while (streaming.load())
+    {
+        DWORD streamIndex = 0, flags = 0;
+        LONGLONG timestamp = 0;
+        ComPtr<IMFSample> sample;
+
+        HRESULT hr = mfReader->ReadSample(
+            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+            0,
+            &streamIndex,
+            &flags,
+            &timestamp,
+            &sample);
+
+        if (FAILED(hr))
+        {
+            std::cerr << "Capture loop: failed to read sample." << std::endl;
+            break;
+        }
+
+        if (!sample)
+            continue;
+
+        ComPtr<IMFMediaBuffer> buffer;
+        hr = sample->ConvertToContiguousBuffer(&buffer);
+        if (FAILED(hr) || !buffer)
+            continue;
+
+        BYTE *rawData = nullptr;
+        DWORD maxLength = 0, currentLength = 0;
+        if (SUCCEEDED(buffer->Lock(&rawData, &maxLength, &currentLength)))
+        {
+            ConvertYUY2ToRGBA(rawData, rgba.data(), frameWidth, frameHeight);
+            buffer->Unlock();
+
+            {
+                std::lock_guard<std::mutex> lock(cacheMutex);
+                cachedRgba = rgba;
+            }
+
+            if (frameCallback)
+            {
+                frameCallback(rgba.data(), (int)frameWidth, (int)frameHeight);
+            }
+        }
+    }
+
+    streaming.store(false);
 }
 
 std::vector<MediaTypeInfo> Camera::ListSupportedMediaTypes()
@@ -294,16 +392,40 @@ bool Camera::SetResolution(int width, int height)
 
 FrameData Camera::CaptureFrame()
 {
-
-    HRESULT hr;
-    DWORD streamIndex, flags;
-    LONGLONG timestamp;
-    ComPtr<IMFSample> sample;
     FrameData frame;
 
     frame.width = frameWidth;
     frame.height = frameHeight;
     frame.rgbData = nullptr;
+
+    // While the preview stream is running, serve the latest cached frame
+    // instead of pulling a new sample.
+    if (streaming.load())
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        if (cachedRgba.empty())
+        {
+            return frame;
+        }
+
+        frame.size = static_cast<size_t>(frameWidth) * frameHeight * 3;
+        frame.rgbData = new unsigned char[frame.size];
+
+        const unsigned char *src = cachedRgba.data();
+        unsigned char *dst = frame.rgbData;
+        for (size_t i = 0, j = 0; j < frame.size; i += 4, j += 3)
+        {
+            dst[j] = src[i];
+            dst[j + 1] = src[i + 1];
+            dst[j + 2] = src[i + 2];
+        }
+        return frame;
+    }
+
+    HRESULT hr;
+    DWORD streamIndex, flags;
+    LONGLONG timestamp;
+    ComPtr<IMFSample> sample;
 
     // Read a sample from the media source
     IMFSourceReader *mfReader = reinterpret_cast<IMFSourceReader *>(reader);

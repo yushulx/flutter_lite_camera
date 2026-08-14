@@ -5,6 +5,10 @@
 #include <string>
 #include <iostream>
 #include <cstdint>
+#include <atomic>
+#include <functional>
+#include <mutex>
+#include <thread>
 
 // Export macro for shared library
 #ifdef _WIN32
@@ -75,6 +79,11 @@ CAMERA_API std::vector<CaptureDeviceInfo> ListCaptureDevices();
 CAMERA_API void ReleaseFrame(FrameData &frame);
 CAMERA_API void saveFrameAsJPEG(const unsigned char *data, int width, int height, const std::string &filename);
 
+// Called from the capture thread for every streamed frame.
+// rgbaData is RGBA8888 (4 bytes per pixel) and is only valid for the duration
+// of the call.
+typedef std::function<void(const unsigned char *rgbaData, int width, int height)> FrameCallback;
+
 // Camera class
 class CAMERA_API Camera
 {
@@ -97,10 +106,25 @@ public:
     FrameData CaptureFrame();
     bool SetResolution(int width, int height);
 
+    // Starts a background thread that continuously grabs frames, caches the
+    // latest one for CaptureFrame(), and forwards every frame as RGBA to the
+    // given callback. Returns false if the camera is not open.
+    bool StartCaptureLoop(FrameCallback callback);
+    void StopCaptureLoop();
+    bool IsStreaming() const { return streaming.load(); }
+
     uint32_t frameWidth;
     uint32_t frameHeight;
 
 private:
+    void CaptureLoop();
+
+    std::thread captureThread;
+    std::atomic<bool> streaming{false};
+    FrameCallback frameCallback;
+    std::mutex cacheMutex;
+    std::vector<unsigned char> cachedRgba; // Latest frame, RGBA8888
+
 #ifdef _WIN32
     void *reader;
     ComPtr<IMFMediaSource> ms;

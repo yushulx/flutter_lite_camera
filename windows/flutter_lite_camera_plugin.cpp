@@ -26,7 +26,7 @@ namespace flutter_lite_camera
             registrar->messenger(), "flutter_lite_camera",
             &flutter::StandardMethodCodec::GetInstance());
 
-    auto plugin = std::make_unique<FlutterLiteCameraPlugin>();
+    auto plugin = std::make_unique<FlutterLiteCameraPlugin>(registrar->texture_registrar());
 
     channel->SetMethodCallHandler(
         [plugin_pointer = plugin.get()](const auto &call, auto result)
@@ -37,14 +37,26 @@ namespace flutter_lite_camera
     registrar->AddPlugin(std::move(plugin));
   }
 
-  FlutterLiteCameraPlugin::FlutterLiteCameraPlugin()
+  FlutterLiteCameraPlugin::FlutterLiteCameraPlugin(flutter::TextureRegistrar *texture_registrar)
+      : texture_registrar_(texture_registrar)
   {
     camera = new Camera();
   }
 
   FlutterLiteCameraPlugin::~FlutterLiteCameraPlugin()
   {
+    StopPreview();
     delete camera;
+  }
+
+  void FlutterLiteCameraPlugin::StopPreview()
+  {
+    camera->StopCaptureLoop();
+    if (texture_handler_)
+    {
+      texture_handler_->UnregisterTexture();
+      texture_handler_ = nullptr;
+    }
   }
 
   void FlutterLiteCameraPlugin::HandleMethodCall(
@@ -113,6 +125,7 @@ namespace flutter_lite_camera
       if (arguments && !arguments->empty())
       {
         int index = std::get<int>((*arguments)[0]);
+        StopPreview();
         bool success = camera->Open(index);
         result->Success(flutter::EncodableValue(success));
       }
@@ -156,6 +169,44 @@ namespace flutter_lite_camera
         result->Error("InvalidArguments", "Expected width and height");
       }
     }
+    else if (method_call.method_name().compare("startPreview") == 0)
+    {
+      if (camera->IsStreaming() && texture_handler_ && texture_handler_->TextureRegistered())
+      {
+        result->Success(flutter::EncodableValue(texture_handler_->texture_id()));
+        return;
+      }
+
+      texture_handler_ = std::make_unique<TextureHandler>(texture_registrar_);
+      int64_t texture_id = texture_handler_->RegisterTexture();
+      if (texture_id < 0)
+      {
+        texture_handler_ = nullptr;
+        result->Error("TextureError", "Failed to register texture");
+        return;
+      }
+
+      TextureHandler *handler = texture_handler_.get();
+      bool started = camera->StartCaptureLoop(
+          [handler](const unsigned char *rgbaData, int width, int height)
+          {
+            handler->UpdateBuffer(rgbaData, width, height);
+          });
+
+      if (!started)
+      {
+        texture_handler_ = nullptr;
+        result->Error("CameraError", "Failed to start preview. Is the camera open?");
+        return;
+      }
+
+      result->Success(flutter::EncodableValue(texture_id));
+    }
+    else if (method_call.method_name().compare("stopPreview") == 0)
+    {
+      StopPreview();
+      result->Success();
+    }
     else if (method_call.method_name().compare("captureFrame") == 0)
     {
       FrameData frame = camera->CaptureFrame();
@@ -175,6 +226,7 @@ namespace flutter_lite_camera
     }
     else if (method_call.method_name().compare("release") == 0)
     {
+      StopPreview();
       camera->Release();
       result->Success();
     }

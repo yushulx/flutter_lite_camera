@@ -26,6 +26,8 @@ add_library(${PLUGIN_NAME} SHARED
   "include/flutter_lite_camera/flutter_lite_camera_plugin_c_api.h"
   "flutter_lite_camera_plugin_c_api.cpp"
   "CameraWindows.cpp"
+  "texture_handler.cpp"
+  "texture_handler.h"
   ${PLUGIN_SOURCES}
 )
 

@@ -3,9 +3,11 @@
 
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
+#include <flutter/texture_registrar.h>
 
 #include <memory>
 #include "include/Camera.h"
+#include "texture_handler.h"
 namespace flutter_lite_camera
 {
 
@@ -14,7 +16,7 @@ namespace flutter_lite_camera
     public:
         static void RegisterWithRegistrar(flutter::PluginRegistrarWindows *registrar);
 
-        FlutterLiteCameraPlugin();
+        explicit FlutterLiteCameraPlugin(flutter::TextureRegistrar *texture_registrar);
 
         virtual ~FlutterLiteCameraPlugin();
 
@@ -28,7 +30,11 @@ namespace flutter_lite_camera
             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     private:
+        void StopPreview();
+
         Camera *camera;
+        flutter::TextureRegistrar *texture_registrar_;
+        std::unique_ptr<TextureHandler> texture_handler_;
     };
 
 } // namespace flutter_lite_camera

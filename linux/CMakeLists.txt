@@ -14,6 +14,8 @@ set(PLUGIN_NAME "flutter_lite_camera_plugin")
 # Any new source files that you add to the plugin should be added here.
 list(APPEND PLUGIN_SOURCES
   "flutter_lite_camera_plugin.cc"
+  "camera_texture.cc"
+  "camera_texture.h"
 )
 
 # Define the plugin library target. Its name must not be changed (see comment

@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  # Static analysis and Dart unit tests (method-channel level, no camera
+  # hardware required).
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  # ---------------------------------------------------------------------------
+  # Native compilation checks: building the example app compiles the plugin's
+  # C++/Swift sources for each desktop platform.
+  # ---------------------------------------------------------------------------
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: example
+      - run: flutter build windows
+        working-directory: example
+
+  build-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install Flutter Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - run: flutter pub get
+        working-directory: example
+      - run: flutter build linux
+        working-directory: example
+
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: example
+      - run: flutter build macos
+        working-directory: example
+
+  # ---------------------------------------------------------------------------
+  # Runtime tests on a real Flutter engine.
+  #
+  # The integration test enumerates cameras and skips the open/preview/capture
+  # pipeline when no device is present, so it passes on camera-less runners
+  # while still verifying plugin registration and the method channel.
+  # ---------------------------------------------------------------------------
+  runtime-test-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: example
+      - run: flutter test integration_test -d windows
+        working-directory: example
+
+  runtime-test-macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: example
+      - run: flutter test integration_test -d macos
+        working-directory: example
+
+  # Full end-to-end test with a virtual camera: v4l2loopback provides
+  # /dev/video0 and ffmpeg feeds a test pattern into it, so the camera
+  # pipeline (open -> startPreview -> captureFrame -> stopPreview) runs for
+  # real, including the capture thread, texture registration and frame cache.
+  runtime-test-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            xvfb ffmpeg v4l2loopback-dkms v4l2loopback-utils
+      - name: Start a virtual camera
+        run: |
+          sudo modprobe v4l2loopback video_nr=0 card_label="CI Camera" exclusive_caps=1
+          test -e /dev/video0
+          v4l2-ctl --device=/dev/video0 --info || true
+      - name: Feed a test pattern into the virtual camera
+        run: |
+          nohup ffmpeg -loglevel error -re -f lavfi -i testsrc=size=640x480:rate=30 \
+            -pix_fmt yuyv422 -f v4l2 /dev/video0 > ffmpeg.log 2>&1 &
+          sleep 2
+          cat ffmpeg.log || true
+      - name: Run integration tests with a display
+        run: |
+          flutter pub get
+          xvfb-run -a flutter test integration_test -d linux
+        working-directory: example

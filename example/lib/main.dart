@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_barcode_sdk/dynamsoft_barcode.dart';
 import 'package:flutter_barcode_sdk/flutter_barcode_sdk.dart';
 import 'package:flutter_lite_camera/flutter_lite_camera.dart';
-import 'dart:ui' as ui;
 
 void main() {
   runApp(const MyApp());
@@ -30,11 +29,10 @@ class CameraApp extends StatefulWidget {
 class _CameraAppState extends State<CameraApp> {
   final FlutterLiteCamera _flutterLiteCameraPlugin = FlutterLiteCamera();
   bool _isCameraOpened = false;
-  bool _isCapturing = false;
+  int _textureId = -1;
   int _width = 640;
   int _height = 480;
-  ui.Image? _latestFrame;
-  bool _shouldCapture = false;
+  bool _shouldDecode = false;
   FlutterBarcodeSdk? _barcodeReader;
   // To read barcodes, get a 30-day FREEE trial license for Dynamsoft Barcode Reader https://www.dynamsoft.com/customer/license/trialLicense/?product=dcv&package=cross-platform
   String licenseKey =
@@ -65,14 +63,18 @@ class _CameraAppState extends State<CameraApp> {
         print("Opening camera 0");
         bool opened = await _flutterLiteCameraPlugin.open(0);
         if (opened) {
+          // The native layer renders the video feed into this texture; no
+          // frame data crosses into Dart for display purposes.
+          int textureId = await _flutterLiteCameraPlugin.startPreview();
           setState(() {
             _isCameraOpened = true;
-            _shouldCapture = true;
+            _textureId = textureId;
+            _shouldDecode = true;
           });
 
-          // Start capturing frames
-          _isCapturing = true;
-          _captureFrames();
+          // Start pulling frames for barcode decoding only. This does not
+          // affect the preview stream.
+          _decodeFrames();
         } else {
           print("Failed to open the camera.");
         }
@@ -82,88 +84,55 @@ class _CameraAppState extends State<CameraApp> {
     }
   }
 
-  Future<void> _decodeFrame(Uint8List rgb, int width, int height) async {
-    if (isDecoding || _barcodeReader == null) return;
+  Future<void> _decodeFrames() async {
+    if (!_isCameraOpened || !_shouldDecode) return;
 
-    isDecoding = true;
-    results = await _barcodeReader!.decodeImageBuffer(
-      rgb,
-      width,
-      height,
-      width * 3,
-      ImagePixelFormat.IPF_RGB_888.index,
-      ImageRotation.rotation0.index,
-    );
+    if (!isDecoding && _barcodeReader != null) {
+      isDecoding = true;
+      try {
+        Map<String, dynamic> frame =
+            await _flutterLiteCameraPlugin.captureFrame();
+        if (frame.containsKey('data')) {
+          _width = frame['width'];
+          _height = frame['height'];
+          Uint8List rgbBuffer = frame['data'];
 
-    isDecoding = false;
-  }
+          final ret = await _barcodeReader!.decodeImageBuffer(
+            rgbBuffer,
+            _width,
+            _height,
+            _width * 3,
+            ImagePixelFormat.IPF_RGB_888.index,
+            ImageRotation.rotation0.index,
+          );
 
-  Future<void> _captureFrames() async {
-    if (!_isCameraOpened || !_shouldCapture) return;
-
-    try {
-      Map<String, dynamic> frame =
-          await _flutterLiteCameraPlugin.captureFrame();
-      if (frame.containsKey('data')) {
-        Uint8List rgbBuffer = frame['data'];
-        _decodeFrame(rgbBuffer, frame['width'], frame['height']);
-        await _convertBufferToImage(rgbBuffer, frame['width'], frame['height']);
+          setState(() {
+            results = ret;
+          });
+        }
+      } catch (e) {
+        // No frame available yet.
       }
-    } catch (e) {
-      // print("Error capturing frame: $e");
+      isDecoding = false;
     }
 
-    // Schedule the next frame
-    if (_shouldCapture) {
-      Future.delayed(const Duration(milliseconds: 30), _captureFrames);
+    if (_shouldDecode) {
+      Future.delayed(const Duration(milliseconds: 30), _decodeFrames);
     }
-  }
-
-  Future<void> _convertBufferToImage(
-      Uint8List rgbBuffer, int width, int height) async {
-    final pixels = Uint8List(width * height * 4); // RGBA buffer
-
-    for (int i = 0; i < width * height; i++) {
-      int r = rgbBuffer[i * 3];
-      int g = rgbBuffer[i * 3 + 1];
-      int b = rgbBuffer[i * 3 + 2];
-
-      // Populate RGBA buffer
-      pixels[i * 4] = b;
-      pixels[i * 4 + 1] = g;
-      pixels[i * 4 + 2] = r;
-      pixels[i * 4 + 3] = 255; // Alpha channel
-    }
-
-    final completer = Completer<ui.Image>();
-    ui.decodeImageFromPixels(
-      pixels,
-      width,
-      height,
-      ui.PixelFormat.rgba8888,
-      completer.complete,
-    );
-
-    final image = await completer.future;
-    setState(() {
-      _latestFrame = image;
-    });
   }
 
   Future<void> _stopCamera() async {
-    setState(() {
-      _shouldCapture = false;
-    });
+    _shouldDecode = false;
 
     if (_isCameraOpened) {
+      await _flutterLiteCameraPlugin.stopPreview();
       await _flutterLiteCameraPlugin.release();
       setState(() {
         _isCameraOpened = false;
-        _latestFrame = null;
+        _textureId = -1;
+        results = null;
       });
     }
-
-    _isCapturing = false;
   }
 
   void _handleWindowClose() {
@@ -188,7 +157,7 @@ class _CameraAppState extends State<CameraApp> {
     return Scaffold(
       body: Stack(
         children: [
-          if (_latestFrame != null)
+          if (_textureId >= 0)
             LayoutBuilder(
               builder: (context, constraints) {
                 final screenWidth = constraints.maxWidth;
@@ -206,11 +175,18 @@ class _CameraAppState extends State<CameraApp> {
                 }
 
                 return Center(
-                  child: CustomPaint(
-                    painter: FramePainter(_latestFrame!, results ?? []),
-                    child: SizedBox(
-                      width: drawWidth,
-                      height: drawHeight,
+                  child: SizedBox(
+                    width: drawWidth,
+                    height: drawHeight,
+                    child: Stack(
+                      children: [
+                        Texture(textureId: _textureId),
+                        CustomPaint(
+                          painter: ResultPainter(
+                              results ?? [], drawWidth / _width),
+                          child: Container(),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -218,7 +194,7 @@ class _CameraAppState extends State<CameraApp> {
             )
           else
             Center(
-              child: Text('Camera not initialized or no frame captured'),
+              child: Text('Camera not initialized'),
             ),
           Positioned(
             bottom: 20,
@@ -229,12 +205,12 @@ class _CameraAppState extends State<CameraApp> {
               children: [
                 // Start Button
                 ElevatedButton(
-                  onPressed: _isCapturing ? null : () => _startCamera(),
+                  onPressed: _isCameraOpened ? null : () => _startCamera(),
                   child: const Text('Start'),
                 ),
                 // Stop Button
                 ElevatedButton(
-                  onPressed: !_isCapturing ? null : () => _stopCamera(),
+                  onPressed: !_isCameraOpened ? null : () => _stopCamera(),
                   child: const Text('Stop'),
                 ),
               ],
@@ -246,77 +222,47 @@ class _CameraAppState extends State<CameraApp> {
   }
 }
 
-class FramePainter extends CustomPainter {
-  final ui.Image image;
+class ResultPainter extends CustomPainter {
   final List<BarcodeResult> results;
+  final double scale;
 
-  FramePainter(this.image, this.results);
+  ResultPainter(this.results, this.scale);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint();
+    if (results.isEmpty) return;
 
-    // Calculate the scaling factor (minimum of X and Y ratios)
-    final double scale =
-        (size.width / image.width).compareTo(size.height / image.height) < 0
-            ? size.width / image.width
-            : size.height / image.height;
+    final textPaint = Paint()
+      ..color = Colors.blue
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
 
-    // Center the image in the canvas
-    final double dx = (size.width - image.width * scale) / 2;
-    final double dy = (size.height - image.height * scale) / 2;
+    for (var result in results) {
+      final path = Path()
+        ..moveTo(result.x1.toDouble() * scale, result.y1.toDouble() * scale)
+        ..lineTo(result.x2.toDouble() * scale, result.y2.toDouble() * scale)
+        ..lineTo(result.x3.toDouble() * scale, result.y3.toDouble() * scale)
+        ..lineTo(result.x4.toDouble() * scale, result.y4.toDouble() * scale)
+        ..close();
 
-    // Draw the image
-    canvas.drawImageRect(
-      image,
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-      Rect.fromLTWH(dx, dy, image.width * scale, image.height * scale),
-      paint,
-    );
+      canvas.drawPath(path, textPaint);
 
-    // Draw barcode results
-    if (results.isNotEmpty) {
-      final textPaint = Paint()
-        ..color = Colors.blue
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2;
-
-      for (var result in results) {
-        // Scale the coordinates and offset by dx and dy
-        final path = Path()
-          ..moveTo(dx + result.x1.toDouble() * scale,
-              dy + result.y1.toDouble() * scale)
-          ..lineTo(dx + result.x2.toDouble() * scale,
-              dy + result.y2.toDouble() * scale)
-          ..lineTo(dx + result.x3.toDouble() * scale,
-              dy + result.y3.toDouble() * scale)
-          ..lineTo(dx + result.x4.toDouble() * scale,
-              dy + result.y4.toDouble() * scale)
-          ..close();
-
-        canvas.drawPath(path, textPaint);
-
-        // Scale text position
-        final double textX = dx + result.x1.toDouble() * scale;
-        final double textY = dy + result.y1.toDouble() * scale;
-
-        final textPainter = TextPainter(
-          text: TextSpan(
-            text: result.text,
-            style: const TextStyle(
-              color: Colors.red,
-              fontSize: 16,
-            ),
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: result.text,
+          style: const TextStyle(
+            color: Colors.red,
+            fontSize: 16,
           ),
-          textDirection: TextDirection.ltr,
-        );
+        ),
+        textDirection: TextDirection.ltr,
+      );
 
-        textPainter.layout();
-        textPainter.paint(
-          canvas,
-          Offset(textX, textY),
-        );
-      }
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(result.x1.toDouble() * scale, result.y1.toDouble() * scale),
+      );
     }
   }
 

@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "flutter_lite_camera_plugin_private.h"
+#include "camera_texture.h"
 
 #define FLUTTER_LITE_CAMERA_PLUGIN(obj)                                     \
   (G_TYPE_CHECK_INSTANCE_CAST((obj), flutter_lite_camera_plugin_get_type(), \
@@ -17,9 +18,39 @@ struct _FlutterLiteCameraPlugin
 {
   GObject parent_instance;
   Camera *camera;
+  FlTextureRegistrar *texture_registrar;
+  CameraTexture *texture;
+  int64_t texture_id;
+  gint mark_pending;
 };
 
 G_DEFINE_TYPE(FlutterLiteCameraPlugin, flutter_lite_camera_plugin, g_object_get_type())
+
+// Runs on the main thread; scheduled from the capture thread via g_idle_add.
+static gboolean mark_frame_available_cb(gpointer user_data)
+{
+  FlutterLiteCameraPlugin *self = FLUTTER_LITE_CAMERA_PLUGIN(user_data);
+  if (self->texture_registrar != nullptr && self->texture_id >= 0)
+  {
+    fl_texture_registrar_mark_texture_frame_available(self->texture_registrar, self->texture_id);
+  }
+  g_atomic_int_set(&self->mark_pending, 0);
+  return G_SOURCE_REMOVE;
+}
+
+static void stop_preview(FlutterLiteCameraPlugin *self)
+{
+  // Join the capture thread first so no frame callback can run while the
+  // texture is being torn down.
+  self->camera->StopCaptureLoop();
+
+  if (self->texture_registrar != nullptr && self->texture_id >= 0)
+  {
+    fl_texture_registrar_unregister_texture(self->texture_registrar, self->texture_id);
+    self->texture_id = -1;
+  }
+  g_clear_object(&self->texture);
+}
 
 // Called when a method call is received from Flutter.
 static void flutter_lite_camera_plugin_handle_method_call(
@@ -88,6 +119,7 @@ static void flutter_lite_camera_plugin_handle_method_call(
     if (index)
     {
       int index_int = fl_value_get_int(index);
+      stop_preview(self);
       bool success = self->camera->Open(index_int);
       response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_bool(success)));
     }
@@ -130,6 +162,48 @@ static void flutter_lite_camera_plugin_handle_method_call(
       response = FL_METHOD_RESPONSE(fl_method_error_response_new("INVALID_ARGUMENTS", "Expected width and height", nullptr));
     }
   }
+  else if (strcmp(method, "startPreview") == 0)
+  {
+    if (self->texture != nullptr && self->texture_id >= 0)
+    {
+      response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_int(self->texture_id)));
+    }
+    else
+    {
+      self->texture = camera_texture_new();
+      self->texture_id = fl_texture_registrar_register_texture(self->texture_registrar, FL_TEXTURE(self->texture));
+
+      FlutterLiteCameraPlugin *plugin = self;
+      bool started = self->camera->StartCaptureLoop(
+          [plugin](const unsigned char *rgbaData, int width, int height)
+          {
+            camera_texture_update_frame(plugin->texture, rgbaData,
+                                        static_cast<uint32_t>(width),
+                                        static_cast<uint32_t>(height));
+            // fl_texture_registrar_* must be called on the main thread.
+            if (g_atomic_int_compare_and_exchange(&plugin->mark_pending, 0, 1))
+            {
+              g_idle_add(mark_frame_available_cb, plugin);
+            }
+          });
+
+      if (!started)
+      {
+        g_clear_object(&self->texture);
+        self->texture_id = -1;
+        response = FL_METHOD_RESPONSE(fl_method_error_response_new("CAMERA_ERROR", "Failed to start preview. Is the camera open?", nullptr));
+      }
+      else
+      {
+        response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_int(self->texture_id)));
+      }
+    }
+  }
+  else if (strcmp(method, "stopPreview") == 0)
+  {
+    stop_preview(self);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  }
   else if (strcmp(method, "captureFrame") == 0)
   {
     FrameData frame = self->camera->CaptureFrame();
@@ -151,6 +225,7 @@ static void flutter_lite_camera_plugin_handle_method_call(
   }
   else if (strcmp(method, "release") == 0)
   {
+    stop_preview(self);
     self->camera->Release();
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   }
@@ -187,7 +262,9 @@ FlMethodResponse *get_platform_version()
 static void flutter_lite_camera_plugin_dispose(GObject *object)
 {
   FlutterLiteCameraPlugin *self = FLUTTER_LITE_CAMERA_PLUGIN(object);
+  stop_preview(self);
   delete self->camera;
+  g_clear_object(&self->texture_registrar);
   G_OBJECT_CLASS(flutter_lite_camera_plugin_parent_class)->dispose(object);
 }
 
@@ -199,6 +276,10 @@ static void flutter_lite_camera_plugin_class_init(FlutterLiteCameraPluginClass *
 static void flutter_lite_camera_plugin_init(FlutterLiteCameraPlugin *self)
 {
   self->camera = new Camera();
+  self->texture_registrar = nullptr;
+  self->texture = nullptr;
+  self->texture_id = -1;
+  self->mark_pending = 0;
 }
 
 static void method_call_cb(FlMethodChannel *channel, FlMethodCall *method_call,
@@ -212,6 +293,9 @@ void flutter_lite_camera_plugin_register_with_registrar(FlPluginRegistrar *regis
 {
   FlutterLiteCameraPlugin *plugin = FLUTTER_LITE_CAMERA_PLUGIN(
       g_object_new(flutter_lite_camera_plugin_get_type(), nullptr));
+
+  plugin->texture_registrar = FL_TEXTURE_REGISTRAR(
+      g_object_ref(fl_plugin_registrar_get_texture_registrar(registrar)));
 
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel =

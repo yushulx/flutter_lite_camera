@@ -38,6 +38,22 @@ class MethodChannelFlutterLiteCamera extends FlutterLiteCameraPlatform {
     return frame.cast<String, dynamic>();
   }
 
+  /// Starts the native preview stream.
+  ///
+  /// Returns a [Future] that completes with the texture id used by a
+  /// [Texture] widget to display the feed.
+  @override
+  Future<int> startPreview() async {
+    final int textureId = await methodChannel.invokeMethod('startPreview');
+    return textureId;
+  }
+
+  /// Stops the native preview stream and unregisters the texture.
+  @override
+  Future<void> stopPreview() async {
+    await methodChannel.invokeMethod('stopPreview');
+  }
+
   /// Releases the camera resources.
   ///
   /// Returns a [Future] that completes when the resources are released.

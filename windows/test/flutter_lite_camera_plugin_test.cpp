@@ -23,7 +23,8 @@ using flutter::MethodResultFunctions;
 }  // namespace
 
 TEST(FlutterLiteCameraPlugin, GetPlatformVersion) {
-  FlutterLiteCameraPlugin plugin;
+  // The texture registrar is only needed for startPreview/stopPreview.
+  FlutterLiteCameraPlugin plugin(nullptr);
   // Save the reply value from the success callback.
   std::string result_string;
   plugin.HandleMethodCall(
