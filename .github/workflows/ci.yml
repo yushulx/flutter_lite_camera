@@ -103,16 +103,26 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
         working-directory: example
-      - name: Fix libDynamicPdf install name
-        # flutter_barcode_sdk_macos ships libDynamicPdf.dylib whose internal
-        # install name is @loader_path/libDynamicPdfRx64_11.5.4.0416.dylib,
-        # so any app linking it crashes at launch. Fix the id and re-sign
-        # ad-hoc in the pub cache copy.
+      - name: Fix Dynamsoft dylib install names
+        # flutter_barcode_sdk_macos ships dylibs with broken install names
+        # (e.g. libDynamicPdf.dylib identifies as
+        # @loader_path/libDynamicPdfRx64_<version>.dylib, and
+        # libDynamsoftNeuralNetwork.dylib has a bare name), so any app
+        # linking them crashes at launch. Normalize all ids and internal
+        # references to @rpath form and re-sign ad-hoc.
         run: |
-          DYLIB=$(find "$PUB_CACHE/hosted/pub.dev" -name "libDynamicPdf.dylib" -path "*flutter_barcode_sdk_macos*" | head -1)
-          echo "Patching $DYLIB"
-          install_name_tool -id @rpath/libDynamicPdf.dylib "$DYLIB"
-          codesign --force --sign - "$DYLIB"
+          LIBDIR=$(dirname "$(find "$PUB_CACHE/hosted/pub.dev" -name "libDynamicPdf.dylib" -path "*flutter_barcode_sdk_macos*" | head -1)")
+          echo "Patching dylibs in $LIBDIR"
+          for f in "$LIBDIR"/*.dylib; do
+            for ref in $(otool -L "$f" | awk 'NR>2 {print $1}'); do
+              case "$ref" in
+                @rpath/*|/usr/lib/*|/System/*|@executable_path/*) ;;
+                *) install_name_tool -change "$ref" "@rpath/$(basename "$ref")" "$f" || true ;;
+              esac
+            done
+            install_name_tool -id "@rpath/$(basename "$f")" "$f" || true
+            codesign --force --sign - "$f" || true
+          done
       - name: Probe direct app launch
         # The app bundles third-party dylibs via flutter_barcode_sdk_macos;
         # launch it directly to surface dyld/load errors that the test
@@ -172,7 +182,7 @@ jobs:
         # reboot is delayed and detached so this step exits cleanly; the
         # runner re-runs the interrupted next step after coming back.
         run: |
-          sudo apt-get install -y linux-image-generic linux-headers-generic linux-modules-extra-generic
+          sudo apt-get install -y linux-image-generic linux-headers-generic
           NEW_KERNEL=$(ls /boot/vmlinuz-*-generic | sort -V | tail -n1 | sed 's|/boot/vmlinuz-||')
           echo "Rebooting into kernel: $NEW_KERNEL"
           sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub
