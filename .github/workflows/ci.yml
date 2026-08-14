@@ -155,16 +155,16 @@ jobs:
           exit 1
         working-directory: example
 
-  # Full end-to-end test with a virtual camera: v4l2loopback provides
-  # /dev/video0 and ffmpeg feeds a test pattern into it, so the camera
-  # pipeline (open -> startPreview -> captureFrame -> stopPreview) runs for
-  # real, including the capture thread, texture registration and frame cache.
-  #
-  # The stock azure kernel ships no V4L2 core modules, so the job first
-  # installs the generic Ubuntu kernel and reboots the runner into it.
+  # Full end-to-end test of the camera pipeline. GitHub runners have no
+  # camera and the azure kernel ships no V4L2 core modules (and mid-job
+  # reboots are not supported, so installing a generic kernel does not
+  # help), so a small LD_PRELOAD shim (ci/fake_v4l2.c) emulates the V4L2
+  # ioctls in userspace and serves a synthetic test pattern. This exercises
+  # the real plugin code: open -> capture thread -> texture registration ->
+  # frame cache -> captureFrame.
   runtime-test-linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -175,55 +175,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
-            xvfb ffmpeg v4l-utils build-essential git
-      - name: Install the generic kernel and reboot
-        # The azure kernel lacks the V4L2 core (videodev/videobuf2), which
-        # v4l2loopback depends on. Install the generic kernel, point GRUB at
-        # it (a grub.d drop-in wins over the cloud-image defaults), then
-        # schedule a delayed reboot in the background so this step exits 0.
-        run: |
-          sudo apt-get install -y linux-image-generic linux-headers-generic
-          NEW_KERNEL=$(ls /boot/vmlinuz-*-generic | sort -V | tail -n1 | sed 's|/boot/vmlinuz-||')
-          echo "Rebooting into kernel: $NEW_KERNEL"
-          echo "GRUB_DEFAULT=\"Advanced options for Ubuntu>Ubuntu, with Linux $NEW_KERNEL\"" | sudo tee /etc/default/grub.d/99-ci-kernel.cfg
-          sudo update-grub
-          (sleep 5 && sudo reboot) &
-      - name: Wait for the reboot and verify the kernel
-        # If this step starts before the reboot triggers, it gets interrupted
-        # mid-sleep and the runner re-runs it after coming back up.
-        run: |
-          if [[ "$(uname -r)" == *azure* ]]; then
-            echo "Reboot has not happened yet; waiting to be interrupted..."
-            sleep 300
-          fi
-          uname -r
-          if [[ "$(uname -r)" == *azure* ]]; then
-            echo "Still on the azure kernel; reboot did not switch kernels"
-            exit 1
-          fi
-      - name: Build and install v4l2loopback
-        run: |
-          git clone --depth 1 https://github.com/umlaeute/v4l2loopback.git /tmp/v4l2loopback
-          make -C /tmp/v4l2loopback
-          sudo make -C /tmp/v4l2loopback install
-          sudo depmod -a
-      - name: Start a virtual camera
-        run: |
-          if ! sudo modprobe v4l2loopback video_nr=0 card_label="CI Camera" exclusive_caps=1; then
-            echo "=== dmesg tail ==="
-            sudo dmesg | tail -30
-            exit 1
-          fi
-          test -e /dev/video0
-          v4l2-ctl --device=/dev/video0 --info || true
-      - name: Feed a test pattern into the virtual camera
-        run: |
-          nohup ffmpeg -loglevel error -re -f lavfi -i testsrc=size=640x480:rate=30 \
-            -pix_fmt yuyv422 -f v4l2 /dev/video0 > ffmpeg.log 2>&1 &
-          sleep 2
-          cat ffmpeg.log || true
+            xvfb build-essential
+      - name: Build the fake V4L2 device shim
+        run: gcc -shared -fPIC -O2 -o ci/fake_v4l2.so ci/fake_v4l2.c -ldl
       - name: Run integration tests with a display
         run: |
           flutter pub get
-          xvfb-run -a flutter test integration_test -d linux
+          xvfb-run -a env LD_PRELOAD="$GITHUB_WORKSPACE/ci/fake_v4l2.so" flutter test integration_test -d linux
         working-directory: example
