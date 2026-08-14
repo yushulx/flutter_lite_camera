@@ -122,7 +122,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
-            xvfb ffmpeg v4l2loopback-dkms v4l2loopback-utils
+            xvfb ffmpeg v4l-utils "linux-headers-$(uname -r)"
+      - name: Build and install v4l2loopback
+        # The distro v4l2loopback-dkms package may not support the runner's
+        # kernel; building from source tracks the latest kernel API.
+        run: |
+          git clone --depth 1 https://github.com/umlaeute/v4l2loopback.git /tmp/v4l2loopback
+          make -C /tmp/v4l2loopback
+          sudo make -C /tmp/v4l2loopback install
+          sudo depmod -a
       - name: Start a virtual camera
         run: |
           sudo modprobe v4l2loopback video_nr=0 card_label="CI Camera" exclusive_caps=1

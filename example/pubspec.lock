@@ -74,10 +74,66 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_barcode_sdk
-      sha256: "09e966378c08aed1a40270fe94cb79a02ad5698fcfeae10b47661e1c8a54a3db"
+      sha256: "00446b6c75164b51edbec2ae066ceecf721c240c6862c6c698073730bca79e89"
       url: "https://pub.dev"
     source: hosted
-    version: "3.1.1"
+    version: "5.1.0"
+  flutter_barcode_sdk_android:
+    dependency: transitive
+    description:
+      name: flutter_barcode_sdk_android
+      sha256: "33f797d7e4d29233beeea88cf79e33fce41e943105f8a11103b8035449416722"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
+  flutter_barcode_sdk_ios:
+    dependency: transitive
+    description:
+      name: flutter_barcode_sdk_ios
+      sha256: "8f1c82c41af901dad1a1bf3e2d87706f8c95777846533df6603318575e370875"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
+  flutter_barcode_sdk_linux:
+    dependency: transitive
+    description:
+      name: flutter_barcode_sdk_linux
+      sha256: "02fe7482fb94d09bcc8137c2ec044d6cde6234de55dd457edf2ca19944ea589d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
+  flutter_barcode_sdk_macos:
+    dependency: transitive
+    description:
+      name: flutter_barcode_sdk_macos
+      sha256: "5c158d0b205808dd221162716a506b482a81f8067e8c7a32971846000c31d323"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
+  flutter_barcode_sdk_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_barcode_sdk_platform_interface
+      sha256: aec2ea302533fb113c0804f975232f1cbdf97fff94aa2506bad4cd4df92d0b95
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
+  flutter_barcode_sdk_web:
+    dependency: transitive
+    description:
+      name: flutter_barcode_sdk_web
+      sha256: a78b8f933328847c875ff9f6e1358faecb24f9c7ca7ba42274294f5247eaa748
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
+  flutter_barcode_sdk_windows:
+    dependency: transitive
+    description:
+      name: flutter_barcode_sdk_windows
+      sha256: e83bdda3e6011e036e8686451e2d104bbe5884a2999b99d59e0a63ebfa021443
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   flutter_driver:
     dependency: transitive
     description: flutter
@@ -118,14 +174,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  js:
-    dependency: transitive
-    description:
-      name: js
-      sha256: "53385261521cc4a0c4658fd0ad07a7d14591cf8fc33abbceae306ddb974888dc"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.7.2"
   leak_tracker:
     dependency: transitive
     description:
@@ -301,4 +349,4 @@ packages:
     version: "3.0.4"
 sdks:
   dart: ">=3.8.0-0 <4.0.0"
-  flutter: ">=3.18.0-18.0.pre.54"
+  flutter: ">=3.27.0"

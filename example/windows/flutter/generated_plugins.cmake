@@ -3,7 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  flutter_barcode_sdk
+  flutter_barcode_sdk_windows
   flutter_lite_camera
 )
 

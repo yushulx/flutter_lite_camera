@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_barcode_sdk/dynamsoft_barcode.dart';
 import 'package:flutter_barcode_sdk/flutter_barcode_sdk.dart';
 import 'package:flutter_lite_camera/flutter_lite_camera.dart';
 
@@ -16,12 +16,14 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: CameraApp(),
+      home: const CameraApp(),
     );
   }
 }
 
 class CameraApp extends StatefulWidget {
+  const CameraApp({super.key});
+
   @override
   State<CameraApp> createState() => _CameraAppState();
 }
@@ -59,8 +61,8 @@ class _CameraAppState extends State<CameraApp> {
     try {
       List<String> devices = await _flutterLiteCameraPlugin.getDeviceList();
       if (devices.isNotEmpty) {
-        print("Available Devices: $devices");
-        print("Opening camera 0");
+        debugPrint("Available Devices: $devices");
+        debugPrint("Opening camera 0");
         bool opened = await _flutterLiteCameraPlugin.open(0);
         if (opened) {
           // The native layer renders the video feed into this texture; no
@@ -76,7 +78,7 @@ class _CameraAppState extends State<CameraApp> {
           // affect the preview stream.
           _decodeFrames();
         } else {
-          print("Failed to open the camera.");
+          debugPrint("Failed to open the camera.");
         }
       }
     } catch (e) {
@@ -103,7 +105,7 @@ class _CameraAppState extends State<CameraApp> {
             _height,
             _width * 3,
             ImagePixelFormat.IPF_RGB_888.index,
-            ImageRotation.rotation0.index,
+            ImageRotation.rotation0.value,
           );
 
           setState(() {
