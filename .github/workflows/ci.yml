@@ -102,7 +102,16 @@ jobs:
           cache: true
       - run: flutter pub get
         working-directory: example
-      - run: flutter test integration_test -d macos
+      # Launching a desktop app on the macOS runner occasionally fails with
+      # "Unable to start the app on the device"; retry a few times.
+      - name: Run integration tests
+        run: |
+          for i in 1 2 3; do
+            flutter test integration_test -d macos && exit 0
+            echo "Attempt $i failed, retrying..."
+            sleep 10
+          done
+          exit 1
         working-directory: example
 
   # Full end-to-end test with a virtual camera: v4l2loopback provides
@@ -133,7 +142,15 @@ jobs:
           sudo depmod -a
       - name: Start a virtual camera
         run: |
-          sudo modprobe v4l2loopback video_nr=0 card_label="CI Camera" exclusive_caps=1
+          sudo modprobe videodev
+          sudo modprobe videobuf2_common || true
+          sudo modprobe videobuf2_v4l2 || true
+          sudo modprobe videobuf2_vmalloc || true
+          if ! sudo modprobe v4l2loopback video_nr=0 card_label="CI Camera" exclusive_caps=1; then
+            echo "=== dmesg tail ==="
+            sudo dmesg | tail -30
+            exit 1
+          fi
           test -e /dev/video0
           v4l2-ctl --device=/dev/video0 --info || true
       - name: Feed a test pattern into the virtual camera
