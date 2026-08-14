@@ -100,6 +100,19 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Resolve dependencies
+        run: flutter pub get
+        working-directory: example
+      - name: Fix libDynamicPdf install name
+        # flutter_barcode_sdk_macos ships libDynamicPdf.dylib whose internal
+        # install name is @loader_path/libDynamicPdfRx64_11.5.4.0416.dylib,
+        # so any app linking it crashes at launch. Fix the id and re-sign
+        # ad-hoc in the pub cache copy.
+        run: |
+          DYLIB=$(find "$PUB_CACHE/hosted/pub.dev" -name "libDynamicPdf.dylib" -path "*flutter_barcode_sdk_macos*" | head -1)
+          echo "Patching $DYLIB"
+          install_name_tool -id @rpath/libDynamicPdf.dylib "$DYLIB"
+          codesign --force --sign - "$DYLIB"
       - name: Probe direct app launch
         # The app bundles third-party dylibs via flutter_barcode_sdk_macos;
         # launch it directly to surface dyld/load errors that the test
@@ -156,7 +169,8 @@ jobs:
       - name: Install the generic kernel and reboot
         # The azure kernel lacks the V4L2 core (videodev/videobuf2), which
         # v4l2loopback depends on. The generic kernel includes them. The
-        # runner resumes this job automatically after the reboot.
+        # reboot is delayed and detached so this step exits cleanly; the
+        # runner re-runs the interrupted next step after coming back.
         run: |
           sudo apt-get install -y linux-image-generic linux-headers-generic linux-modules-extra-generic
           NEW_KERNEL=$(ls /boot/vmlinuz-*-generic | sort -V | tail -n1 | sed 's|/boot/vmlinuz-||')
@@ -164,7 +178,7 @@ jobs:
           sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub
           sudo update-grub
           sudo grub-set-default "Advanced options for Ubuntu>Ubuntu, with Linux $NEW_KERNEL"
-          sudo reboot
+          (sleep 15 && sudo reboot) &
       - name: Verify the generic kernel is running
         run: |
           uname -r
