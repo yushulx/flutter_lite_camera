@@ -74,10 +74,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_barcode_sdk
-      sha256: d76ef616762fc00b45d553910eaddbf476f7d8a38be8087387ae066dfeddc286
+      sha256: d77d391dc26f1ff13facee411fca0ff10cf9fef446aa52eeb5968429b254ac88
       url: "https://pub.dev"
     source: hosted
-    version: "5.1.1"
+    version: "5.1.2"
   flutter_barcode_sdk_android:
     dependency: transitive
     description:
@@ -106,10 +106,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_barcode_sdk_macos
-      sha256: "6fd3408546b32cae93cd8f9bcbd2928072a1780552b18f10a3856a25ec6e1ac3"
+      sha256: a865e04e0e707d5d8f0d9d1a7720f30f7273cbcfad8fc1971d0d269be5598f2b
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.1"
+    version: "1.0.2"
   flutter_barcode_sdk_platform_interface:
     dependency: transitive
     description:

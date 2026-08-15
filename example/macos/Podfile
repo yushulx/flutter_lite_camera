@@ -40,4 +40,34 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
   end
+
+  # flutter_barcode_sdk_macos: bundle the Dynamsoft Templates/ and
+  # Models/ folders next to the Dynamsoft dylibs on every build.
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.user_targets.each do |target|
+      next if target.build_phases.any? { |phase| phase.respond_to?(:name) && phase.name == 'Copy Dynamsoft Resources' }
+
+      phase = target.new_shell_script_build_phase('Copy Dynamsoft Resources')
+      phase.input_paths = [
+        '${PODS_ROOT}/../Flutter/ephemeral/.symlinks/plugins/flutter_barcode_sdk_macos/macos/Resources/Templates',
+        '${PODS_ROOT}/../Flutter/ephemeral/.symlinks/plugins/flutter_barcode_sdk_macos/macos/Resources/Models',
+      ]
+      phase.output_paths = [
+        '${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Templates',
+        '${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Models',
+        '${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Templates',
+        '${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Models',
+      ]
+      phase.shell_script = <<~'SH'
+        DYNAMSOFT_RESOURCES="${PODS_ROOT}/../Flutter/ephemeral/.symlinks/plugins/flutter_barcode_sdk_macos/macos/Resources"
+        if [ -d "$DYNAMSOFT_RESOURCES" ]; then
+          rsync -a --delete "$DYNAMSOFT_RESOURCES/Templates" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/"
+          rsync -a --delete "$DYNAMSOFT_RESOURCES/Models" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/"
+          ln -sfn ../Resources/Templates "${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Templates"
+          ln -sfn ../Resources/Models "${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Models"
+        fi
+      SH
+      aggregate_target.user_project.save
+    end
+  end
 end
