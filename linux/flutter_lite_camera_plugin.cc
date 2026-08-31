@@ -147,13 +147,32 @@ static void flutter_lite_camera_plugin_handle_method_call(
   else if (strcmp(method, "setResolution") == 0)
   {
     FlValue *args = fl_method_call_get_args(method_call);
-    FlValue *width = fl_value_lookup_string(args, "width");
-    FlValue *height = fl_value_lookup_string(args, "height");
+    int width_int = 0;
+    int height_int = 0;
+    bool have_size = false;
 
-    if (width && height)
+    // Accept the standard [width, height] list used by every other platform,
+    // and the legacy {width, height} map for backward compatibility.
+    if (fl_value_get_type(args) == FL_VALUE_TYPE_LIST && fl_value_get_length(args) == 2)
     {
-      int width_int = fl_value_get_int(width);
-      int height_int = fl_value_get_int(height);
+      width_int = fl_value_get_int(fl_value_get_list_value(args, 0));
+      height_int = fl_value_get_int(fl_value_get_list_value(args, 1));
+      have_size = true;
+    }
+    else if (fl_value_get_type(args) == FL_VALUE_TYPE_MAP)
+    {
+      FlValue *width = fl_value_lookup_string(args, "width");
+      FlValue *height = fl_value_lookup_string(args, "height");
+      if (width && height)
+      {
+        width_int = fl_value_get_int(width);
+        height_int = fl_value_get_int(height);
+        have_size = true;
+      }
+    }
+
+    if (have_size)
+    {
       bool success = self->camera->SetResolution(width_int, height_int);
       response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_bool(success)));
     }
@@ -245,6 +264,12 @@ static void flutter_lite_camera_plugin_handle_method_call(
   else if (strcmp(method, "getHeight") == 0)
   {
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_int(self->camera->frameHeight)));
+  }
+  else if (strcmp(method, "getRotation") == 0)
+  {
+    // Desktop cameras are exposed in landscape window orientation; no
+    // rotation is needed.
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_int(0)));
   }
   else
   {

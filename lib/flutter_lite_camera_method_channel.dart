@@ -54,11 +54,43 @@ class MethodChannelFlutterLiteCamera extends FlutterLiteCameraPlatform {
     await methodChannel.invokeMethod('stopPreview');
   }
 
+  /// Sets the capture resolution in pixels; the platform negotiates the
+  /// closest supported size with the device.
+  @override
+  Future<bool> setResolution(int width, int height) async {
+    final bool success =
+        await methodChannel.invokeMethod('setResolution', [width, height]);
+    return success;
+  }
+
+  /// Returns the actual capture width negotiated with the device.
+  @override
+  Future<int> getWidth() async {
+    return await methodChannel.invokeMethod('getWidth') as int;
+  }
+
+  /// Returns the actual capture height negotiated with the device.
+  @override
+  Future<int> getHeight() async {
+    return await methodChannel.invokeMethod('getHeight') as int;
+  }
+
   /// Releases the camera resources.
   ///
   /// Returns a [Future] that completes when the resources are released.
   @override
   Future<void> release() async {
     await methodChannel.invokeMethod('release');
+  }
+
+  /// Returns the clockwise preview rotation in degrees. Desktop and web
+  /// platforms that do not implement the native method return 0.
+  @override
+  Future<int> getRotation() async {
+    try {
+      return await methodChannel.invokeMethod('getRotation') as int;
+    } on MissingPluginException {
+      return 0;
+    }
   }
 }

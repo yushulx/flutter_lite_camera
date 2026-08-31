@@ -114,19 +114,30 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             return false
         }
 
+        // Pick the closest supported format instead of failing on inexact
+        // sizes; the actual dimensions are reported through
+        // getWidth()/getHeight().
+        func distance(_ d: CMVideoDimensions) -> Int {
+            min(abs(Int(d.width) - width) + abs(Int(d.height) - height),
+                abs(Int(d.width) - height) + abs(Int(d.height) - width))
+        }
+
         do {
             try device.lockForConfiguration()
-            if let format = device.formats.first(where: {
-                CMVideoFormatDescriptionGetDimensions($0.formatDescription).width == width
-                    && CMVideoFormatDescriptionGetDimensions($0.formatDescription).height == height
+            if let format = device.formats.min(by: {
+                distance(CMVideoFormatDescriptionGetDimensions($0.formatDescription))
+                    < distance(CMVideoFormatDescriptionGetDimensions($1.formatDescription))
             }) {
                 device.activeFormat = format
                 device.unlockForConfiguration()
-                self.frameWidth = width
-                self.frameHeight = height
+                let d = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                if Int(d.width) != width || Int(d.height) != height {
+                    print("Resolution \(width)x\(height) not supported; using \(d.width)x\(d.height).")
+                }
+                self.frameWidth = Int(d.width)
+                self.frameHeight = Int(d.height)
                 return true
             } else {
-                print("Resolution not supported.")
                 device.unlockForConfiguration()
                 return false
             }

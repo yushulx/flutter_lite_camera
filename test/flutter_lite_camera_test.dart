@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_lite_camera/flutter_lite_camera.dart';
 import 'package:flutter_lite_camera/flutter_lite_camera_platform_interface.dart';
@@ -25,7 +26,25 @@ class MockFlutterLiteCameraPlatform
   Future<int> startPreview() => Future.value(1);
 
   @override
+  Widget buildPreview(int textureId) => Texture(textureId: textureId);
+
+  @override
   Future<void> stopPreview() => Future.value();
+
+  @override
+  Future<int> getRotation() => Future.value(0);
+
+  @override
+  Future<bool> setResolution(int width, int height) => Future.value(true);
+
+  @override
+  Future<bool> setResolutionPreset(ResolutionPreset preset) => Future.value(true);
+
+  @override
+  Future<int> getWidth() => Future.value(640);
+
+  @override
+  Future<int> getHeight() => Future.value(480);
 
   @override
   Future<void> release() => Future.value();

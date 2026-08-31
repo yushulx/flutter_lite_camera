@@ -104,6 +104,8 @@ public class FlutterLiteCameraPlugin: NSObject, FlutterPlugin {
       result(cameraManager.getWidth())
     case "getHeight":
       result(cameraManager.getHeight())
+    case "getRotation":
+      result(0)
     case "release":
       stopPreview()
       cameraManager.release()

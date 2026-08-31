@@ -240,6 +240,12 @@ namespace flutter_lite_camera
       int height = camera->frameHeight;
       result->Success(flutter::EncodableValue(height));
     }
+    else if (method_call.method_name().compare("getRotation") == 0)
+    {
+      // Desktop cameras are exposed in landscape window orientation; no
+      // rotation is needed.
+      result->Success(flutter::EncodableValue(0));
+    }
     else
     {
       result->NotImplemented();

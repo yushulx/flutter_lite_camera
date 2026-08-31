@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_lite_camera/flutter_lite_camera_method_channel.dart';
+import 'package:flutter_lite_camera/flutter_lite_camera_platform_interface.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +24,14 @@ void main() {
           case 'stopPreview':
           case 'release':
             return null;
+          case 'getRotation':
+            return 90;
+          case 'setResolution':
+            return true;
+          case 'getWidth':
+            return 1280;
+          case 'getHeight':
+            return 720;
           case 'captureFrame':
             return <String, dynamic>{
               'width': 640,
@@ -56,5 +65,23 @@ void main() {
     final frame = await platform.captureFrame();
     expect(frame['width'], 640);
     expect(frame['height'], 480);
+  });
+
+  test('getRotation', () async {
+    expect(await platform.getRotation(), 90);
+  });
+
+  test('setResolution', () async {
+    expect(await platform.setResolution(1280, 720), true);
+  });
+
+  test('setResolutionPreset maps to the preset target', () async {
+    expect(
+        await platform.setResolutionPreset(ResolutionPreset.high), true);
+  });
+
+  test('getWidth and getHeight', () async {
+    expect(await platform.getWidth(), 1280);
+    expect(await platform.getHeight(), 720);
   });
 }
