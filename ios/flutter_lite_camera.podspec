@@ -4,20 +4,20 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_lite_camera'
-  s.version          = '0.0.1'
+  s.version          = '0.2.1'
   s.summary          = 'A lightweight Flutter camera plugin.'
   s.description      = <<-DESC
 A lightweight Flutter camera plugin that renders previews natively through
 Flutter textures and captures RGB frames on demand for image processing.
                        DESC
   s.homepage         = 'https://github.com/yushulx/flutter_lite_camera'
-  s.license          = { :file => '../LICENSE' }
+  s.license          = { :type => 'MIT', :file => '../LICENSE' }
   s.author           = { 'yushulx' => 'yushulx@gmail.com' }
 
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
+  s.source_files = 'flutter_lite_camera/Sources/flutter_lite_camera/**/*.swift'
 
-  s.resource_bundles = {'flutter_lite_camera_privacy' => ['Resources/PrivacyInfo.xcprivacy']}
+  s.resource_bundles = {'flutter_lite_camera_privacy' => ['flutter_lite_camera/Sources/flutter_lite_camera/PrivacyInfo.xcprivacy']}
   s.frameworks = ['AVFoundation', 'CoreMedia', 'CoreVideo']
   s.dependency 'Flutter'
 

@@ -11,7 +11,8 @@
 - **Simple Integration**: Easy-to-use API for seamless Flutter integration.
 
 ## Requirements
-- **Flutter SDK: Version** 3.0.0 or above
+- **Flutter SDK**: 3.27 (Dart 3.6) or above. Flutter 3.44 or above is required
+  when the host app enables Swift Package Manager for iOS or macOS.
 - **Web**: The page must be served over **HTTPS** (or `localhost`) for `getUserMedia` to work.
 - **macOS / iOS permissions**: Ensure camera access is granted.
     - macOS — in `DebugProfile.entitlements` or `Release.entitlements`, add:
@@ -97,4 +98,3 @@ if (devices.isNotEmpty) {
 | iOS | Native texture (AVFoundation BGRA) | Latest BGRA pixel buffer | `Info.plist` + `AVCaptureDevice.requestAccess` |
 | Android | `SurfaceTexture` fed by Camera2 | Latest `YUV_420_888` frame, converted to RGB888 | `AndroidManifest.xml` + runtime request |
 | Web | `getUserMedia` video element in a platform view | Snapshot drawn via an `ImageData` pass | Browser prompt (HTTPS required) |
-

@@ -1,6 +1,6 @@
 name: flutter_lite_camera
-description: "A lightweight Flutter camera plugin for Windows, Linux, macOS, iOS, Android, and web. Renders previews natively through Flutter textures (or a video element on web) and captures RGB frames on demand for image processing."
-version: 0.2.0
+description: "A Flutter camera plugin for Android, iOS, web, Windows, macOS, and Linux with native previews and RGB frame capture."
+version: 0.2.1
 homepage: https://github.com/yushulx/flutter_lite_camera
 repository: https://github.com/yushulx/flutter_lite_camera
 
@@ -14,7 +14,10 @@ dependencies:
   plugin_platform_interface: ^2.0.2
   flutter_web_plugins:
     sdk: flutter
-  web: '>=0.5.1 <2.0.0'
+  # The web implementation uses MediaTrackConstraints.deviceId, width, and
+  # height, which were added before web 1.1.1. Keep the lower bound aligned
+  # with the APIs used by lib/flutter_lite_camera_web.dart.
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
@@ -38,4 +41,3 @@ flutter:
         fileName: flutter_lite_camera_web.dart
       windows:
         pluginClass: FlutterLiteCameraPluginCApi
-

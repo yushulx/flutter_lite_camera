@@ -301,6 +301,7 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         case .portraitUpsideDown: return 180
         case .landscapeRight: return 270
         case .portrait, .faceUp, .faceDown, .unknown: return 0
+        @unknown default: return 0
         }
     }
 

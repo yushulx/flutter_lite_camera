@@ -1,3 +1,10 @@
+# 0.2.1
+
+- Added Swift Package Manager support for the iOS and macOS implementations.
+- Tightened the `web` dependency lower bound to the version required by the
+  browser APIs used by the web implementation.
+- Improved pub.dev package metadata.
+
 ## 0.2.0
 - Added **iOS**, **Android**, and **web** implementations — one API across all six platforms.
 - Zero-copy preview everywhere: a `FlutterTexture` fed by BGRA buffers on iOS/macOS, an engine `SurfaceTexture` on Android, and an embedded `getUserMedia` video element on the web. No frame data crosses the platform channel for display.
