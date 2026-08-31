@@ -205,6 +205,33 @@ bool Camera::SetResolution(int width, int height)
         return false;
     }
 
+    // Changing the format while buffers are queued and the stream is on is
+    // unsafe: the mmap'd buffers are sized for the old format and the
+    // capture loop converts with frameWidth/frameHeight, so a mid-stream
+    // switch reads/writes out of bounds. Tear the pipeline down first and
+    // rebuild it at the new size.
+    bool wasStreaming = streaming.load();
+    FrameCallback savedCallback = frameCallback;
+    if (wasStreaming)
+    {
+        StopCaptureLoop();
+    }
+
+    uint32_t oldWidth = frameWidth;
+    uint32_t oldHeight = frameHeight;
+
+    StopCapture();  // STREAMOFF
+    UninitDevice(); // munmap
+
+    // Free the driver-side buffers; most drivers require this before S_FMT
+    // with a different size.
+    struct v4l2_requestbuffers req;
+    memset(&req, 0, sizeof(req));
+    req.count = 0;
+    req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_MMAP;
+    ioctl(fd, VIDIOC_REQBUFS, &req);
+
     struct v4l2_format fmt;
     memset(&fmt, 0, sizeof(fmt));
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -212,15 +239,44 @@ bool Camera::SetResolution(int width, int height)
     fmt.fmt.pix.height = height;
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
 
-    if (ioctl(fd, VIDIOC_S_FMT, &fmt) < 0)
+    bool success = false;
+    if (ioctl(fd, VIDIOC_S_FMT, &fmt) == 0)
     {
-        perror("Error setting resolution");
+        // Save the actual resolution set by the device
+        frameWidth = fmt.fmt.pix.width;
+        frameHeight = fmt.fmt.pix.height;
+        success = InitDevice() && StartCapture();
+    }
+
+    if (!success)
+    {
+        // Roll back to the previous format so the camera keeps working.
+        memset(&fmt, 0, sizeof(fmt));
+        fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        fmt.fmt.pix.width = oldWidth;
+        fmt.fmt.pix.height = oldHeight;
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+        if (ioctl(fd, VIDIOC_S_FMT, &fmt) == 0)
+        {
+            frameWidth = fmt.fmt.pix.width;
+            frameHeight = fmt.fmt.pix.height;
+            if (InitDevice() && StartCapture() && wasStreaming)
+            {
+                StartCaptureLoop(savedCallback);
+            }
+        }
         return false;
     }
 
-    // Save the actual resolution set by the device
-    frameWidth = fmt.fmt.pix.width;
-    frameHeight = fmt.fmt.pix.height;
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        cachedRgba.clear(); // discard stale frames at the old size
+    }
+
+    if (wasStreaming)
+    {
+        StartCaptureLoop(savedCallback);
+    }
 
     return true;
 }

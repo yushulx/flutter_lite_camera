@@ -61,6 +61,18 @@ void main() {
     expect((frame2['data'] as Uint8List).length,
         (frame2['width'] as int) * (frame2['height'] as int) * 3);
 
+    // Switching resolution mid-preview must keep frame data self-consistent
+    // (regression test for a buffer-size race that crashed Windows/Linux).
+    // The negotiated size is device-dependent, so only internal consistency
+    // is asserted.
+    await plugin.setResolutionPreset(ResolutionPreset.high);
+    await Future.delayed(const Duration(milliseconds: 500));
+    final Map<String, dynamic> frame3 = await plugin.captureFrame();
+    expect((frame3['data'] as Uint8List).length,
+        (frame3['width'] as int) * (frame3['height'] as int) * 3);
+    expect(await plugin.getWidth(), frame3['width']);
+    expect(await plugin.getHeight(), frame3['height']);
+
     await plugin.stopPreview();
     await plugin.release();
   });

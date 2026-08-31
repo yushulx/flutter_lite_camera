@@ -365,29 +365,87 @@ bool Camera::SetResolution(int width, int height)
     if (!reader)
         return false;
 
-    ComPtr<IMFMediaType> mediaType;
-    HRESULT hr = MFCreateMediaType(&mediaType);
-    if (FAILED(hr))
-        return false;
+    IMFSourceReader *mfReader = reinterpret_cast<IMFSourceReader *>(reader);
 
-    hr = mediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-    hr = mediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2);
-    hr = MFSetAttributeSize(mediaType.Get(), MF_MT_FRAME_SIZE, width, height);
-
-    if (SUCCEEDED(hr))
+    // Changing the media type while the capture loop runs is unsafe: the
+    // loop sizes its conversion buffers from frameWidth/frameHeight, so
+    // switching resolution mid-stream overflows them. Stop the loop first
+    // and restart it afterwards.
+    bool wasStreaming = streaming.load();
+    FrameCallback savedCallback = frameCallback;
+    if (wasStreaming)
     {
-        IMFSourceReader *mfReader = reinterpret_cast<IMFSourceReader *>(reader);
+        StopCaptureLoop();
+    }
 
-        hr = mfReader->SetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), nullptr, mediaType.Get());
-        if (SUCCEEDED(hr))
+    bool success = false;
+
+    // Find the closest supported frame size across all native types, any
+    // subtype — the same closest-match negotiation the other platforms do.
+    UINT32 bestWidth = 0, bestHeight = 0;
+    int64_t bestScore = INT64_MAX;
+    for (DWORD i = 0;; i++)
+    {
+        ComPtr<IMFMediaType> candidate;
+        HRESULT hr = mfReader->GetNativeMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), i, &candidate);
+        if (FAILED(hr))
+            break;
+
+        UINT32 w = 0, h = 0;
+        MFGetAttributeSize(candidate.Get(), MF_MT_FRAME_SIZE, &w, &h);
+
+        int64_t dw = (int64_t)w - width;
+        int64_t dh = (int64_t)h - height;
+        int64_t score = (dw < 0 ? -dw : dw) + (dh < 0 ? -dh : dh);
+        if (score < bestScore)
         {
-            frameWidth = width;
-            frameHeight = height;
-            return true;
+            bestScore = score;
+            bestWidth = w;
+            bestHeight = h;
         }
     }
 
-    return false;
+    if (bestScore != INT64_MAX)
+    {
+        // Keep the YUY2 output the capture loop expects; the source reader
+        // inserts a decoder when the camera's native format differs.
+        ComPtr<IMFMediaType> mediaType;
+        HRESULT hr = MFCreateMediaType(&mediaType);
+        if (SUCCEEDED(hr))
+        {
+            mediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+            mediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2);
+            MFSetAttributeSize(mediaType.Get(), MF_MT_FRAME_SIZE, bestWidth, bestHeight);
+
+            hr = mfReader->SetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), nullptr, mediaType.Get());
+        }
+        if (SUCCEEDED(hr))
+        {
+            // Read back the actual media type — the driver may adjust it.
+            ComPtr<IMFMediaType> current;
+            if (SUCCEEDED(mfReader->GetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), &current)))
+            {
+                UINT32 w = 0, h = 0;
+                MFGetAttributeSize(current.Get(), MF_MT_FRAME_SIZE, &w, &h);
+                frameWidth = w;
+                frameHeight = h;
+                success = true;
+            }
+        }
+    }
+
+    if (success)
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        cachedRgba.clear(); // discard stale frames at the old size
+    }
+
+    if (wasStreaming)
+    {
+        StartCaptureLoop(savedCallback);
+    }
+
+    return success;
 }
 
 FrameData Camera::CaptureFrame()

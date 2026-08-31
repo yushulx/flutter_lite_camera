@@ -91,7 +91,7 @@ class FlutterLiteCameraWeb extends FlutterLiteCameraPlatform {
       _stream = await dom.window.navigator.mediaDevices
           .getUserMedia(constraints)
           .toDart;
-    } on dom.DOMException {
+    } catch (e) {
       _stream = null;
       return false;
     }
@@ -121,7 +121,7 @@ class FlutterLiteCameraWeb extends FlutterLiteCameraPlatform {
     // start time.
     try {
       await element.play().toDart;
-    } on dom.DOMException {
+    } catch (e) {
       // Ignore until the next play() attempt.
     }
   }
@@ -260,7 +260,7 @@ class FlutterLiteCameraWeb extends FlutterLiteCameraPlatform {
               width: width.toJS, height: height.toJS))
           .toDart;
       return true;
-    } on dom.DOMException {
+    } catch (e) {
       return false;
     }
   }
