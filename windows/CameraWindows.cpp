@@ -381,7 +381,7 @@ bool Camera::SetResolution(int width, int height)
     bool success = false;
 
     // Find the closest supported frame size across all native types, any
-    // subtype — the same closest-match negotiation the other platforms do.
+    // subtype - the same closest-match negotiation the other platforms do.
     UINT32 bestWidth = 0, bestHeight = 0;
     int64_t bestScore = INT64_MAX;
     for (DWORD i = 0;; i++)
@@ -421,7 +421,7 @@ bool Camera::SetResolution(int width, int height)
         }
         if (SUCCEEDED(hr))
         {
-            // Read back the actual media type — the driver may adjust it.
+            // Read back the actual media type - the driver may adjust it.
             ComPtr<IMFMediaType> current;
             if (SUCCEEDED(mfReader->GetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), &current)))
             {
