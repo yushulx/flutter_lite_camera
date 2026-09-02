@@ -1,3 +1,9 @@
+# 0.2.3
+
+- Android: `captureFrame()` honors the `byteOrder` argument again — 0.2.2
+  accidentally always used the GRB arrangement (2) regardless of the
+  parameter.
+
 # 0.2.2
 
 - iOS/macOS: `captureFrame()` now converts based on the pixel format the

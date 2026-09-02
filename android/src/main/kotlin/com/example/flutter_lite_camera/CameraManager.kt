@@ -410,7 +410,7 @@ class CameraManager(private val context: Context) {
      * 0=RGB, 1=RBG, 2=GRB, 3=GBR, 4=BRG, 5=BGR.
      */
     fun captureFrame(byteOrder: Int): FrameData? {
-        return yuvCaptureFrame(2)
+        return yuvCaptureFrame(byteOrder)
     }
 
     /**
