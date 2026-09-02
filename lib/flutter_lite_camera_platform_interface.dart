@@ -80,7 +80,7 @@ abstract class FlutterLiteCameraPlatform extends PlatformInterface {
   /// On Android the returned frame is rotated to match the on-screen preview
   /// (the display pipeline already orients the preview), so coordinates
   /// derived from the frame map 1:1 onto the displayed image.
-  Future<Map<String, dynamic>> captureFrame() {
+  Future<Map<String, dynamic>> captureFrame({int byteOrder = 2}) {
     throw UnimplementedError('captureFrame() has not been implemented.');
   }
 

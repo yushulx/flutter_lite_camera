@@ -188,7 +188,7 @@ class FlutterLiteCameraWeb extends FlutterLiteCameraPlatform {
   }
 
   @override
-  Future<Map<String, dynamic>> captureFrame() async {
+  Future<Map<String, dynamic>> captureFrame({int byteOrder = 2}) async {
     final element = _videoElement;
     if (element == null) {
       throw PlatformException(

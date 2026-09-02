@@ -158,7 +158,9 @@ class FlutterLiteCameraPlugin :
             }
 
             "captureFrame" -> {
-                val frame = manager?.captureFrame()
+                val args = call.arguments as? Map<*, *>
+                val byteOrder = (args?.get("byteOrder") as? Number)?.toInt() ?: 2
+                val frame = manager?.captureFrame(byteOrder)
                 if (frame == null) {
                     result.error("CAPTURE_FAILED", "No frame available", null)
                 } else {

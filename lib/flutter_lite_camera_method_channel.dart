@@ -32,9 +32,9 @@ class MethodChannelFlutterLiteCamera extends FlutterLiteCameraPlatform {
   ///
   /// Returns a [Future] that completes with a map containing the frame RGB88 data, width, and height.
   @override
-  Future<Map<String, dynamic>> captureFrame() async {
-    Map<dynamic, dynamic> frame =
-        await methodChannel.invokeMethod('captureFrame');
+  Future<Map<String, dynamic>> captureFrame({int byteOrder = 2}) async {
+    Map<dynamic, dynamic> frame = await methodChannel
+        .invokeMethod('captureFrame', {'byteOrder': byteOrder});
     return frame.cast<String, dynamic>();
   }
 

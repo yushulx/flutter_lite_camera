@@ -219,9 +219,10 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         }
     }
 
-    /// Converts the latest BGRA frame to RGB888 on demand. This runs only when
-    /// a frame is explicitly requested (e.g. for barcode decoding) and never
-    /// touches the preview path.
+    /// Converts the latest camera frame to packed RGB888 on demand. The
+    /// conversion honors the pixel format the capture pipeline actually
+    /// delivered instead of assuming BGRA. Runs only when a frame is
+    /// explicitly requested and never touches the preview path.
     func captureFrame() -> FrameData? {
         guard let pixelBuffer = latestPixelBuffer else {
             return nil
@@ -238,6 +239,21 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             return nil
         }
 
+        // Byte offsets of R, G, B within each pixel for the delivered format.
+        let redOffset: Int, greenOffset: Int, blueOffset: Int
+        switch CVPixelBufferGetPixelFormatType(pixelBuffer) {
+        case kCVPixelFormatType_32BGRA:
+            (redOffset, greenOffset, blueOffset) = (2, 1, 0)
+        case kCVPixelFormatType_32RGBA:
+            (redOffset, greenOffset, blueOffset) = (0, 1, 2)
+        case kCVPixelFormatType_32ARGB:
+            (redOffset, greenOffset, blueOffset) = (1, 2, 3)
+        default:
+            // Unknown delivery format; fall back to the requested BGRA.
+            print("captureFrame: unexpected pixel format, assuming BGRA")
+            (redOffset, greenOffset, blueOffset) = (2, 1, 0)
+        }
+
         var rgbData = Data(count: width * height * 3)
         rgbData.withUnsafeMutableBytes { dstPointer in
             let dst = dstPointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
@@ -247,10 +263,10 @@ class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                 let srcRow = src + y * bytesPerRow
                 let dstRow = dst + y * width * 3
                 for x in 0..<width {
-                    // BGRA -> RGB
-                    dstRow[x * 3] = srcRow[x * 4 + 2]
-                    dstRow[x * 3 + 1] = srcRow[x * 4 + 1]
-                    dstRow[x * 3 + 2] = srcRow[x * 4]
+                    let srcPixel = x * 4
+                    dstRow[x * 3] = srcRow[srcPixel + redOffset]
+                    dstRow[x * 3 + 1] = srcRow[srcPixel + greenOffset]
+                    dstRow[x * 3 + 2] = srcRow[srcPixel + blueOffset]
                 }
             }
         }

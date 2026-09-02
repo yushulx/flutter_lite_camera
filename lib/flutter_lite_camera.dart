@@ -13,8 +13,13 @@ class FlutterLiteCamera {
     return FlutterLiteCameraPlatform.instance.open(index);
   }
 
-  Future<Map<String, dynamic>> captureFrame() {
-    return FlutterLiteCameraPlatform.instance.captureFrame();
+  /// [byteOrder] selects the output channel arrangement of the RGB888
+  /// buffer on Android: 0=RGB, 1=RBG, 2=GRB, 3=GBR, 4=BRG, 5=BGR.
+  /// The default (GRB) is verified against on-device colors; other devices
+  /// can pass a different order if their HAL lays the chroma out
+  /// differently.
+  Future<Map<String, dynamic>> captureFrame({int byteOrder = 2}) {
+    return FlutterLiteCameraPlatform.instance.captureFrame(byteOrder: byteOrder);
   }
 
   /// Starts the native preview stream and returns a texture id that can be

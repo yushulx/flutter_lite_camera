@@ -1,3 +1,23 @@
+# 0.2.2
+
+- iOS/macOS: `captureFrame()` now converts based on the pixel format the
+  capture pipeline actually delivered (`kCVPixelFormatType_32BGRA/32RGBA/32ARGB`)
+  instead of always assuming BGRA. Some macOS camera drivers — virtual and
+  third-party devices in particular — ignore the requested BGRA video setting,
+  which previously produced channel-swapped (green/purple tinted) frames.
+- Android: corrected the YUV→RGB conversion to the standard BT.601 full-range
+  coefficients (the previous constants muted blue and distorted hue).
+- Android: `captureFrame()` now converts the two chroma planes with their
+  roles exchanged and writes the pixels in GRB order (byteOrder 2) — the
+  combination verified against on-device reference colors. The previous
+  literal plane assignment with RGB output rendered complement colors (blue
+  objects turned pink).
+- Android: `captureFrame()` accepts a `byteOrder` argument (0=RGB, 1=RBG,
+  2=GRB, 3=GBR, 4=BRG, 5=BGR; default 2) in case a device lays its chroma
+  planes out differently.
+- Android: `captureFrame()` snapshots the cached planes under one lock so
+  luma and chroma always come from the same frame.
+
 # 0.2.1
 
 - Added Swift Package Manager support for the iOS and macOS implementations.

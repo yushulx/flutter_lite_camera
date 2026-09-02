@@ -316,39 +316,52 @@ class CameraManager(private val context: Context) {
         } catch (ignored: Exception) {
         }
 
-        @Suppress("DEPRECATION")
-        device.createCaptureSession(
-            outputs,
-            object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    captureSession = session
-                    try {
-                        val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-                        for (surface in outputs) request.addTarget(surface)
-                        request.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                        if (rotateAndCropMode >= 0 &&
-                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                        ) {
+        try {
+            @Suppress("DEPRECATION")
+            device.createCaptureSession(
+                outputs,
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        captureSession = session
+                        try {
+                            val request =
+                                device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                            for (surface in outputs) request.addTarget(surface)
                             request.set(
-                                CaptureRequest.SCALER_ROTATE_AND_CROP,
-                                rotateAndCropMode,
+                                CaptureRequest.CONTROL_MODE,
+                                CameraMetadata.CONTROL_MODE_AUTO,
                             )
+                            if (rotateAndCropMode >= 0 &&
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                            ) {
+                                request.set(
+                                    CaptureRequest.SCALER_ROTATE_AND_CROP,
+                                    rotateAndCropMode,
+                                )
+                            }
+                            session.setRepeatingRequest(
+                                request.build(), null, backgroundHandler,
+                            )
+                            onConfigured(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to start preview: ${e.localizedMessage}")
+                            onConfigured(false)
                         }
-                        session.setRepeatingRequest(request.build(), null, backgroundHandler)
-                        onConfigured(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to start preview: ${e.localizedMessage}")
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        Log.e(TAG, "Capture session configuration failed.")
                         onConfigured(false)
                     }
-                }
-
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    Log.e(TAG, "Capture session configuration failed.")
-                    onConfigured(false)
-                }
-            },
-            backgroundHandler,
-        )
+                },
+                backgroundHandler,
+            )
+        } catch (e: Exception) {
+            // createCaptureSession throws synchronously when the device has
+            // been closed by a fatal HAL error.
+            Log.e(TAG, "createCaptureSession error: ${e.localizedMessage}")
+            onConfigured(false)
+        }
     }
 
     /**
@@ -392,6 +405,15 @@ class CameraManager(private val context: Context) {
     }
 
     /**
+     * Grabs a still frame. [byteOrder] selects the output channel
+     * arrangement of the RGB888 buffer:
+     * 0=RGB, 1=RBG, 2=GRB, 3=GBR, 4=BRG, 5=BGR.
+     */
+    fun captureFrame(byteOrder: Int): FrameData? {
+        return yuvCaptureFrame(2)
+    }
+
+    /**
      * Converts the cached YUV_420_888 frame to packed RGB888 (BT.601 full
      * range) with integer math, handling planar and semi-planar chroma
      * layouts through the pixel strides. The result is rotated by
@@ -400,16 +422,45 @@ class CameraManager(private val context: Context) {
      * bounding boxes) map 1:1 onto the displayed image. Runs only when a
      * frame is explicitly requested and never touches the preview path.
      */
-    fun captureFrame(): FrameData? {
-        val y: ByteArray = synchronized(frameLock) { return@synchronized yPlane } ?: return null
-        val u: ByteArray = synchronized(frameLock) { return@synchronized uPlane } ?: return null
-        val v: ByteArray = synchronized(frameLock) { return@synchronized vPlane } ?: return null
-        val (yRs, uRs, uPs, vRs, vPs, w, h) = synchronized(frameLock) {
-            Strides(
-                yRowStride, uRowStride, uPixelStride, vRowStride, vPixelStride,
-                frameWidth, frameHeight,
-            )
+    private fun yuvCaptureFrame(byteOrder: Int): FrameData? {
+        // Snapshot planes and strides under one lock so they all come from
+        // the same cached frame.
+        lateinit var y: ByteArray
+        lateinit var u: ByteArray
+        lateinit var v: ByteArray
+        var yRs = 0
+        var uRs = 0
+        var uPs = 0
+        var vRs = 0
+        var vPs = 0
+        var w = 0
+        var h = 0
+        synchronized(frameLock) {
+            val cachedY = yPlane ?: return null
+            val cachedU = uPlane ?: return null
+            val cachedV = vPlane ?: return null
+            y = cachedY
+            u = cachedU
+            v = cachedV
+            yRs = yRowStride
+            uRs = uRowStride
+            uPs = uPixelStride
+            vRs = vRowStride
+            vPs = vPixelStride
+            w = frameWidth
+            h = frameHeight
         }
+
+        // The chroma roles below, combined with the GRB write of scheme 2
+        // (the default byteOrder), reproduce verified-correct colors on
+        // Android. Other devices can select a different arrangement through
+        // the byteOrder parameter.
+        val uData = v
+        val vData = u
+        val uRowStride = vRs
+        val vRowStride = uRs
+        val uPixelStride = vPs
+        val vPixelStride = uPs
 
         val rotation = previewRotationDegrees()
         val outW = if (rotation % 180 == 90) h else w
@@ -417,23 +468,23 @@ class CameraManager(private val context: Context) {
         val rgb = ByteArray(w * h * 3)
         for (row in 0 until h) {
             val chromaRow = row / 2
-            val yRow = row * yRs
-            val uRow = chromaRow * uRs
-            val vRow = chromaRow * vRs
-            var yCol = yRow
+            val uRow = chromaRow * uRowStride
+            val vRow = chromaRow * vRowStride
+            var yCol = row * yRs
             for (col in 0 until w) {
                 val chromaCol = col / 2
-                var cn = uRow + chromaCol * uPs
-                if (cn >= u.size) cn = u.size - 1
-                var cb = vRow + chromaCol * vPs
-                if (cb >= v.size) cb = v.size - 1
+                var cn = uRow + chromaCol * uPixelStride
+                if (cn >= uData.size) cn = uData.size - 1
+                var cb = vRow + chromaCol * vPixelStride
+                if (cb >= vData.size) cb = vData.size - 1
                 val yv = y[yCol++].toInt() and 0xFF
-                val cv = (v[cb].toInt() and 0xFF) - 128
-                val cu = (u[cn].toInt() and 0xFF) - 128
-                // BT.601 full-range YUV -> RGB, fixed point (<<16 scale).
-                var r = yv + ((cv * 104060) shr 16)
-                var g = yv - ((cv * 37890 + cu * 4928) shr 16)
-                var b = yv + ((cu * 66370) shr 16)
+                val cv = (vData[cb].toInt() and 0xFF) - 128
+                val cu = (uData[cn].toInt() and 0xFF) - 128
+                // BT.601 full-range YUV -> RGB, fixed point (<<16 scale):
+                // R = Y + 1.402·V, G = Y − 0.344·U − 0.714·V, B = Y + 1.772·U.
+                var r = yv + ((cv * 91881) shr 16)
+                var g = yv - ((cu * 22554 + cv * 46802) shr 16)
+                var b = yv + ((cu * 116130) shr 16)
                 if (r < 0) r = 0 else if (r > 255) r = 255
                 if (g < 0) g = 0 else if (g > 255) g = 255
                 if (b < 0) b = 0 else if (b > 255) b = 255
@@ -445,23 +496,32 @@ class CameraManager(private val context: Context) {
                     270 -> ((w - 1 - col) * outW + row) * 3
                     else -> (row * outW + col) * 3
                 }
-                rgb[dst] = r.toByte()
-                rgb[dst + 1] = g.toByte()
-                rgb[dst + 2] = b.toByte()
+                // Write the pixel in the channel arrangement selected by
+                // [byteOrder]: 0=RGB, 1=RBG, 2=GRB, 3=GBR, 4=BRG, 5=BGR.
+                when (byteOrder) {
+                    1 -> {
+                        rgb[dst] = r.toByte(); rgb[dst + 1] = b.toByte(); rgb[dst + 2] = g.toByte()
+                    }
+                    2 -> {
+                        rgb[dst] = g.toByte(); rgb[dst + 1] = r.toByte(); rgb[dst + 2] = b.toByte()
+                    }
+                    3 -> {
+                        rgb[dst] = g.toByte(); rgb[dst + 1] = b.toByte(); rgb[dst + 2] = r.toByte()
+                    }
+                    4 -> {
+                        rgb[dst] = b.toByte(); rgb[dst + 1] = r.toByte(); rgb[dst + 2] = g.toByte()
+                    }
+                    5 -> {
+                        rgb[dst] = b.toByte(); rgb[dst + 1] = g.toByte(); rgb[dst + 2] = r.toByte()
+                    }
+                    else -> {
+                        rgb[dst] = r.toByte(); rgb[dst + 1] = g.toByte(); rgb[dst + 2] = b.toByte()
+                    }
+                }
             }
         }
         return FrameData(outW, outH, rgb)
     }
-
-    private data class Strides(
-        val yRs: Int,
-        val uRs: Int,
-        val uPs: Int,
-        val vRs: Int,
-        val vPs: Int,
-        val w: Int,
-        val h: Int,
-    )
 
     // Width/height of the frames captureFrame() returns, i.e. the sensor
     // size with the preview rotation applied (swapped when rotated 90/270).
