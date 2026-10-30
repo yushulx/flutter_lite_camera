@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_lite_camera'
-  s.version          = '0.2.1'
+  s.version          = '0.2.4'
   s.summary          = 'A lightweight Flutter camera plugin.'
   s.description      = <<-DESC
 A lightweight Flutter camera plugin that renders previews natively through
