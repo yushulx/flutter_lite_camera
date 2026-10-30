@@ -75,12 +75,32 @@ class _CameraAppState extends State<CameraApp> {
 
   Future<void> initBarcodeSDK() async {
     final Stopwatch stopwatch = Stopwatch()..start();
-    _barcodeReader = FlutterBarcodeSdk();
-    await _barcodeReader!.setLicense(_licenseKey);
-    await _barcodeReader!.init();
-    reportDemoReady(stopwatch.elapsedMilliseconds);
-    if (mounted && _isCameraOpened) {
-      setState(() => _status = 'Scanning for barcodes…');
+    // License activation can fail when the page runs from a stale cache or the
+    // SDK bundle never loaded (DBR then reports -30063 on the first capture).
+    // Retry once so a transient failure does not leave the demo silent.
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        _barcodeReader = FlutterBarcodeSdk();
+        final int licensed = await _barcodeReader!.setLicense(_licenseKey);
+        if (licensed != 0) {
+          throw StateError('setLicense returned $licensed');
+        }
+        await _barcodeReader!.init();
+        reportDemoReady(stopwatch.elapsedMilliseconds);
+        if (mounted && _isCameraOpened) {
+          setState(() => _status = 'Scanning for barcodes…');
+        }
+        return;
+      } catch (e) {
+        reportDemoAction('barcode_init_failed', {'attempt': attempt, 'error': '$e'});
+        debugPrint('Barcode SDK init failed (attempt $attempt): $e');
+        _barcodeReader = null;
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
+    }
+    if (mounted) {
+      setState(() => _status =
+          'Barcode engine unavailable — hard-reload the page (Ctrl+F5).');
     }
   }
 

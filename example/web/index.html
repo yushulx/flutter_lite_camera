@@ -32,7 +32,10 @@
 
   <!-- Dynamsoft Barcode Reader web SDK, required by flutter_barcode_sdk on web.
        Must load before the Flutter app bootstraps. -->
-  <script src="https://cdn.jsdelivr.net/npm/dynamsoft-barcode-reader-bundle@11.6.3200/dist/dbr.bundle.js"></script>
+  <!-- The ?v= query defeats a stale CDN copy cached by the browser: without it a
+       profile that visited an older build can keep running an old bundle for a
+       day and fail license activation with -30063 "No license found". -->
+  <script src="https://cdn.jsdelivr.net/npm/dynamsoft-barcode-reader-bundle@11.6.3200/dist/dbr.bundle.js?v=11.6.3200"></script>
 
   <!--
     License selection — the same two-path switch used by every Codepool demo.
