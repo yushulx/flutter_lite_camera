@@ -1,17 +1,12 @@
 # 0.2.4
 
-- Docs: the README now points at the hosted web demo
+- Docs: the README links to the hosted web demo of the example app
   (https://www.dynamsoft.com/codepool/demos/flutter-camera-barcode-scanner/).
-- Example: the web build switches between the Codepool license (bound to
-  dynamsoft.com) and the public trial key, reporting `license_fallback` through
-  the shared analytics helper. `example/lib/demo_bridge.dart` carries the key
-  into Dart; `web/index.html` performs the host check.
 - Example: the preview shows a status pill while the barcode wasm module loads
   and the first frame is decoded, and a decode call now times out after 30 s
   instead of leaving the scanning loop blocked.
-- Example: license activation is retried once and surfaces a visible message
-  when the SDK bundle could not be licensed (DBR error -30063), and the SDK
-  bundle URL is versioned so a stale browser cache cannot skip activation.
+- Example: engine start-up is retried once and shows a visible message when it
+  still fails, instead of failing silently.
 
 # 0.2.3
 
