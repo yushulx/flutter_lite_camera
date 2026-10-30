@@ -54,6 +54,10 @@ class _CameraAppState extends State<CameraApp> {
   bool isDecoding = false;
   bool _reportedFirstScan = false;
   List<BarcodeResult>? results;
+  // Shown over the preview until the first result arrives: the browser build
+  // has to download and initialise the barcode wasm module, and the first
+  // decode can take several seconds on a slow machine.
+  String _status = 'Starting camera…';
 
   @override
   void initState() {
@@ -75,6 +79,9 @@ class _CameraAppState extends State<CameraApp> {
     await _barcodeReader!.setLicense(_licenseKey);
     await _barcodeReader!.init();
     reportDemoReady(stopwatch.elapsedMilliseconds);
+    if (mounted && _isCameraOpened) {
+      setState(() => _status = 'Scanning for barcodes…');
+    }
   }
 
   Future<void> _startCamera() async {
@@ -95,7 +102,8 @@ class _CameraAppState extends State<CameraApp> {
       }
       // The native layer renders the video feed into this texture; no
       // frame data crosses into Dart for display purposes.
-      int textureId = await _flutterLiteCameraPlugin.startPreview();
+      setState(() => _status = 'Loading barcode engine…');
+    int textureId = await _flutterLiteCameraPlugin.startPreview();
       int rotation = 0;
       try {
         rotation = await _flutterLiteCameraPlugin.getRotation();
@@ -116,6 +124,7 @@ class _CameraAppState extends State<CameraApp> {
         }
         _rotation = rotation;
         _shouldDecode = true;
+        _status = 'Scanning for barcodes…';
       });
 
       // Start pulling frames for barcode decoding only. This does not
@@ -166,14 +175,19 @@ class _CameraAppState extends State<CameraApp> {
           _height = frame['height'];
           Uint8List rgbBuffer = frame['data'];
 
-          final ret = await _barcodeReader!.decodeImageBuffer(
-            rgbBuffer,
-            _width,
-            _height,
-            _width * 3,
-            ImagePixelFormat.IPF_RGB_888.index,
-            ImageRotation.rotation0.value,
-          );
+          // The first wasm decode can take tens of seconds on a slow
+          // machine. Without a timeout a stalled call would leave
+          // isDecoding true forever and stop the loop.
+          final ret = await _barcodeReader!
+              .decodeImageBuffer(
+                rgbBuffer,
+                _width,
+                _height,
+                _width * 3,
+                ImagePixelFormat.IPF_RGB_888.index,
+                ImageRotation.rotation0.value,
+              )
+              .timeout(const Duration(seconds: 30));
 
           if (ret.isNotEmpty && !_reportedFirstScan) {
             _reportedFirstScan = true;
@@ -206,6 +220,7 @@ class _CameraAppState extends State<CameraApp> {
         _textureId = -1;
         _reportedFirstScan = false;
         results = null;
+        _status = 'Starting camera…';
       });
     }
   }
@@ -283,6 +298,33 @@ class _CameraAppState extends State<CameraApp> {
                           ),
                           child: Container(),
                         ),
+                        // Status pill: the wasm engine needs a few seconds to
+                        // load, so say so instead of showing an empty overlay.
+                        if (_isCameraOpened &&
+                            (results == null || results!.isEmpty))
+                          Positioned(
+                            left: 12,
+                            right: 12,
+                            top: 12,
+                            child: IgnorePointer(
+                              child: Center(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        Colors.black.withValues(alpha: 0.55),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Text(
+                                    _status,
+                                    style: const TextStyle(
+                                        color: Colors.white, fontSize: 13),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
