@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_barcode_sdk/flutter_barcode_sdk.dart';
 import 'package:flutter_lite_camera/flutter_lite_camera.dart';
 
+import 'demo_bridge.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -43,25 +45,36 @@ class _CameraAppState extends State<CameraApp> {
   ResolutionPreset _preset = ResolutionPreset.medium;
   bool _shouldDecode = false;
   FlutterBarcodeSdk? _barcodeReader;
-  // To read barcodes, get a 30-day FREEE trial license for Dynamsoft Barcode Reader https://www.dynamsoft.com/customer/license/trialLicense/?product=dcv&package=cross-platform
-  String licenseKey =
-      'DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==';
+  // Resolved at runtime: the hosted demo injects the Codepool license on
+  // dynamsoft.com and the public trial key everywhere else (see
+  // demo_bridge.dart). For anything beyond local experiments, get your own
+  // 30-day free trial license:
+  // https://www.dynamsoft.com/customer/license/trialLicense/?product=dcv&package=cross-platform
+  final String _licenseKey = resolveDemoLicenseKey();
   bool isDecoding = false;
+  bool _reportedFirstScan = false;
   List<BarcodeResult>? results;
 
   @override
   void initState() {
     super.initState();
     _handleWindowClose();
-    if (licenseKey != '') {
+    if (_licenseKey.isNotEmpty) {
       initBarcodeSDK();
+    }
+    // The hosted demo appends ?autostart=1 to the iframe URL so the camera
+    // opens on load; a standalone run keeps the manual Start button.
+    if (Uri.base.queryParameters['autostart'] == '1') {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startCamera());
     }
   }
 
   Future<void> initBarcodeSDK() async {
+    final Stopwatch stopwatch = Stopwatch()..start();
     _barcodeReader = FlutterBarcodeSdk();
-    await _barcodeReader!.setLicense(licenseKey);
+    await _barcodeReader!.setLicense(_licenseKey);
     await _barcodeReader!.init();
+    reportDemoReady(stopwatch.elapsedMilliseconds);
   }
 
   Future<void> _startCamera() async {
@@ -115,6 +128,7 @@ class _CameraAppState extends State<CameraApp> {
         await _applyResolution(_preset);
       }
     } catch (e) {
+      reportDemoAction('camera_error', {'message': '$e'});
       debugPrint("Error initializing camera: $e");
     }
   }
@@ -161,6 +175,11 @@ class _CameraAppState extends State<CameraApp> {
             ImageRotation.rotation0.value,
           );
 
+          if (ret.isNotEmpty && !_reportedFirstScan) {
+            _reportedFirstScan = true;
+            reportDemoScan('camera');
+          }
+
           setState(() {
             results = ret;
           });
@@ -185,6 +204,7 @@ class _CameraAppState extends State<CameraApp> {
       setState(() {
         _isCameraOpened = false;
         _textureId = -1;
+        _reportedFirstScan = false;
         results = null;
       });
     }

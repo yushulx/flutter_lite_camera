@@ -4,6 +4,12 @@
 
 ![Flutter camera preview app](https://www.dynamsoft.com/codepool/img/2025/01/flutter-lite-camera.png)
 
+## Live demo
+
+[Flutter Camera Barcode Scanner](https://www.dynamsoft.com/codepool/demos/flutter-camera-barcode-scanner/) runs the `example` app as a Flutter web build: open the camera, switch resolution, and read 1D/2D barcodes with Dynamsoft Barcode Reader.
+
+The hosted page activates a Codepool license bound to `dynamsoft.com`. Everywhere else — `localhost`, a fork, a self-hosted copy — `example/web/index.html` falls back to the SDK's public trial key and reports a `license_fallback` event, so the same build runs without any configuration. The key reaches Dart through `example/lib/demo_bridge.dart`.
+
 ## Features
 - **Cross-Platform**: Compatible with **Windows**, **Linux**, **macOS**, **iOS**, **Android**, and **web**.
 - **Zero-Copy Preview**: Renders the video feed directly at the native layer — a `FlutterTexture` fed by BGRA buffers on iOS/macOS, an engine `SurfaceTexture` on Android, and an embedded `getUserMedia` video element on the web. No per-frame data copies into Dart.
